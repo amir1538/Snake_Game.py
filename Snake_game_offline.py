@@ -52,7 +52,7 @@ COLOR_BTN_HOVER = (66, 133, 244)
 screen = pygame.display.set_mode(
     (SCREEN_WIDTH, SCREEN_HEIGHT), pygame.HWSURFACE | pygame.DOUBLEBUF
 )
-pygame.display.set_caption("Google Snake - Smooth & Balanced Edition")
+pygame.display.set_caption("Google Snake - Straight Recoil Edition")
 clock = pygame.time.Clock()
 
 # فونت‌های مدرن و تمیز
@@ -220,6 +220,14 @@ class ExactEatSoundPlayer:
         self._load_user_audio_file()
 
     def _find_audio_file(self):
+        project_audio_files = [
+            os.path.join(self.project_dir, "eat_apple.wav"),
+            os.path.join(self.project_dir, "sound", "eat_apple.wav"),
+        ]
+        for filepath in project_audio_files:
+            if os.path.isfile(filepath):
+                return filepath
+
         target_names = {
             "soundeffect eat apple.m4a",
             "soundeffect eat apple.mp3",
@@ -559,7 +567,6 @@ def get_smooth_snake_points(
 
 
 def sample_point_on_polyline(pts, dist_px):
-    """پیدا کردن مختصات دقیق روی منحنی بدن مار برای حرکت بدون کرش برآمدگی سیب"""
     if dist_px < 0 or len(pts) < 2:
         return None
     accum = 0.0
@@ -577,7 +584,6 @@ def sample_point_on_polyline(pts, dist_px):
 
 
 def build_curved_spine(pts, corner_radius=15.0, arc_steps=12):
-    """گرد و منحنی کردن تمام پیچ‌های بدن مار تا هیچ زاویه مربعی دیده نشود"""
     if len(pts) < 3:
         return list(pts)
     curved = [pts[0]]
@@ -619,6 +625,7 @@ def draw_smooth_snake(
     eating_apple,
     is_dizzy=False,
     dizzy_timer=0.0,
+    recoil_px=0.0,
 ):
     snake_radius = 13
     spine = build_curved_spine(pts, corner_radius=15.5, arc_steps=12)
@@ -644,10 +651,11 @@ def draw_smooth_snake(
             uniform_pts.append((px_i, py_i))
             cum_lengths.append(total_len)
 
-    num_u = len(uniform_pts)
-    hx, hy = uniform_pts[0]
     dx, dy = head_dir_vec
-    if num_u > 5:
+    num_u = len(uniform_pts)
+
+    # در هنگام بازی عادی زاویه سر نرم می‌شود، اما هنگام برخورد دقیقاً در جهت حرکت قفل می‌ماند تا چپ و راست نرود
+    if not is_dizzy and num_u > 5:
         tx_dir = uniform_pts[0][0] - uniform_pts[5][0]
         ty_dir = uniform_pts[0][1] - uniform_pts[5][1]
         td_len = math.hypot(tx_dir, ty_dir)
@@ -658,6 +666,20 @@ def draw_smooth_snake(
             if b_len > 0.001:
                 dx, dy = bx / b_len, by / b_len
 
+    # اعمال عقب‌نشینی کاملاً صاف (Straight Backward Recoil) بدون کج شدن به چپ و راست
+    if recoil_px > 0.0:
+        recoil_span = 65.0  # طول بخشی از گردن و سر که به آرامی به عقب جمع می‌شود
+        for i in range(num_u):
+            if cum_lengths[i] < recoil_span:
+                factor = math.cos((cum_lengths[i] / recoil_span) * (math.pi / 2.0))
+                uniform_pts[i] = (
+                    uniform_pts[i][0] - dx * recoil_px * factor,
+                    uniform_pts[i][1] - dy * recoil_px * factor,
+                )
+            else:
+                break
+
+    hx, hy = uniform_pts[0]
     px, py = -dy, dx
 
     def body_color(ratio):
@@ -712,7 +734,7 @@ def draw_smooth_snake(
         )
         pygame.draw.polygon(surface, COLOR_SHADOW, shadow_jaw)
 
-    # ۲. رسم نوار پیوسته و منحنی بدن (همراه با برآمدگی شکم موقع قورت دادن سیب)
+    # ۲. رسم نوار پیوسته و منحنی بدن
     for i in range(num_u - 1, -1, -1):
         ratio = cum_lengths[i] / max(1.0, total_len)
         rad = radius_at(cum_lengths[i], ratio)
@@ -815,7 +837,7 @@ def draw_smooth_snake(
         pygame.draw.circle(surface, COLOR_SNAKE_HEAD, (int(ex), int(ey)), 8)
         eye_white_r = 6 if (is_dizzy and idx == 0) else 5.5
         pygame.draw.circle(
-            surface, COLOR_WHITE, (int(ex), int(ey)), eye_white_r
+            surface, COLOR_WHITE, (int(ex), int(ey)), int(round(eye_white_r))
         )
         if is_dizzy:
             ang = dizzy_timer * 14.0 * side + (idx * 2.4)
@@ -823,7 +845,10 @@ def draw_smooth_snake(
             py_off = ey + math.sin(ang) * 2.4
             pupil_r = 3.5 if idx == 0 else 2.8
             pygame.draw.circle(
-                surface, COLOR_PUPIL, (int(px_off), int(py_off)), pupil_r
+                surface,
+                COLOR_PUPIL,
+                (int(px_off), int(py_off)),
+                int(round(pupil_r)),
             )
         else:
             px_off = ex + look_x * 2.0
@@ -833,7 +858,7 @@ def draw_smooth_snake(
             )
         nx = hx + dx * 4.5 + px * 3.5 * side
         ny = hy + dy * 4.5 + py * 3.5 * side
-        pygame.draw.circle(surface, COLOR_PUPIL, (int(nx), int(ny)), 1.5)
+        pygame.draw.circle(surface, COLOR_PUPIL, (int(nx), int(ny)), 2)
 
 
 def draw_menu_card_modal(surface, score, high_score):
@@ -903,7 +928,7 @@ def draw_menu_card_modal(surface, score, high_score):
 
     for ex in [eye1_x, eye2_x]:
         pygame.draw.circle(card_surf, COLOR_WHITE, (ex, eye_y), 7)
-        pygame.draw.circle(card_surf, COLOR_PUPIL, (ex - 2, eye_y - 1), 3.5)
+        pygame.draw.circle(card_surf, COLOR_PUPIL, (ex - 2, eye_y - 1), 4)
 
     pygame.draw.ellipse(
         card_surf, COLOR_PUPIL, (172, snake_y + 2, 2.5, 5)
@@ -986,7 +1011,6 @@ def main():
     eating_apple = None
     apple_spawn_scale = 1.0
 
-    # بردار نرم زاویه سر برای چرخش طبیعی سر مار بدون از دست رفتن کنترل جدولی
     smooth_head_dir = [float(direction[0]), float(direction[1])]
 
     score = 0
@@ -996,8 +1020,8 @@ def main():
     game_state = "WAITING"
     dying_timer = 0.0
     DYING_DURATION = 0.85
+    death_progress = 1.0  # ذخیره پیشرفت دقیق لحظه مرگ برای جلوگیری از پرش به چپ/راست
 
-    # سرعت استاندارد و متعادل Google Snake
     MOVE_INTERVAL = 145.0
     move_timer = MOVE_INTERVAL
     mouth_anim = 0.0
@@ -1018,7 +1042,7 @@ def main():
                     and 10 <= my <= 50
                 ):
                     muted = not muted
-                elif game_state == "GAMEOVER":
+                elif game_state in ["GAMEOVER", "WON"]:
                     if not muted:
                         sound_click.play()
                     snake, direction, apple = reset_state()
@@ -1031,13 +1055,14 @@ def main():
                     smooth_head_dir = [float(direction[0]), float(direction[1])]
                     score = 0
                     move_timer = MOVE_INTERVAL
+                    death_progress = 1.0
                     game_state = "WAITING"
 
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_m:
                     muted = not muted
 
-                elif game_state == "GAMEOVER" and event.key in [
+                elif game_state in ["GAMEOVER", "WON"] and event.key in [
                     pygame.K_SPACE,
                     pygame.K_RETURN,
                 ]:
@@ -1053,6 +1078,7 @@ def main():
                     smooth_head_dir = [float(direction[0]), float(direction[1])]
                     score = 0
                     move_timer = MOVE_INTERVAL
+                    death_progress = 1.0
                     game_state = "WAITING"
 
                 elif game_state in ["WAITING", "PLAYING"]:
@@ -1087,7 +1113,6 @@ def main():
                                 if not muted:
                                     turn_sound_manager.play_random()
 
-        # پشتیبانی از نگه داشتن هم‌زمان دو کلید (مثلاً پایین + راست) برای حرکت زیگزاگ/مورب نرم و کنترل‌شده
         if game_state == "PLAYING" and not input_queue:
             keys = pygame.key.get_pressed()
             held_dirs = []
@@ -1112,13 +1137,10 @@ def main():
             while move_timer >= MOVE_INTERVAL:
                 move_timer -= MOVE_INTERVAL
 
-                if input_queue:
-                    next_dir = input_queue.pop(0)
-                    if next_dir != direction:
-                        direction = next_dir
-
+                # قبل از تغییر جهت جدید، بررسی می‌کنیم آیا ادامه حرکت فعلی به مانع خورده یا خیر
+                next_dir = input_queue.pop(0) if input_queue else direction
                 head_x, head_y = snake[0]
-                new_head = (head_x + direction[0], head_y + direction[1])
+                new_head = (head_x + next_dir[0], head_y + next_dir[1])
 
                 if (
                     new_head[0] < 0
@@ -1127,6 +1149,10 @@ def main():
                     or new_head[1] >= GRID_HEIGHT
                     or new_head in snake[:-1]
                 ):
+                    # قفل کردن جهت و موقعیت دقیق در لحظه برخورد تا مار به چپ یا راست نچرخد
+                    direction = next_dir
+                    smooth_head_dir = [float(direction[0]), float(direction[1])]
+                    death_progress = 1.0
                     game_state = "DYING"
                     dying_timer = 0.0
                     mouth_anim = 0.0
@@ -1135,6 +1161,7 @@ def main():
                         sound_die.play()
                     break
                 else:
+                    direction = next_dir
                     prev_tail = snake[-1]
                     snake.insert(0, new_head)
 
@@ -1151,14 +1178,18 @@ def main():
                             "duration": MOVE_INTERVAL * 0.95,
                             "chomped": False,
                         }
-                        while True:
-                            apple = (
-                                random.randint(0, GRID_WIDTH - 1),
-                                random.randint(0, GRID_HEIGHT - 1),
-                            )
-                            if apple not in snake:
-                                break
-                        apple_spawn_scale = 0.0
+                        free_cells = [
+                            (col, row)
+                            for row in range(GRID_HEIGHT)
+                            for col in range(GRID_WIDTH)
+                            if (col, row) not in snake
+                        ]
+                        if free_cells:
+                            apple = random.choice(free_cells)
+                            apple_spawn_scale = 0.0
+                        else:
+                            apple = None
+                            game_state = "WON"
                     else:
                         just_grew = False
                         snake.pop()
@@ -1168,13 +1199,13 @@ def main():
             if dying_timer >= DYING_DURATION:
                 game_state = "GAMEOVER"
 
-        # چرخش نرم زاویه سر به سمت جهت فعلی
-        smooth_head_dir[0] += (direction[0] - smooth_head_dir[0]) * min(
-            1.0, dt_sec * 18.0
-        )
-        smooth_head_dir[1] += (direction[1] - smooth_head_dir[1]) * min(
-            1.0, dt_sec * 18.0
-        )
+        if game_state == "PLAYING":
+            smooth_head_dir[0] += (direction[0] - smooth_head_dir[0]) * min(
+                1.0, dt_sec * 18.0
+            )
+            smooth_head_dir[1] += (direction[1] - smooth_head_dir[1]) * min(
+                1.0, dt_sec * 18.0
+            )
         sh_len = math.hypot(smooth_head_dir[0], smooth_head_dir[1])
         if sh_len > 0.001:
             norm_head_dir = (
@@ -1184,25 +1215,22 @@ def main():
         else:
             norm_head_dir = (float(direction[0]), float(direction[1]))
 
-        progress = (
-            1.0
-            if game_state != "PLAYING"
-            else min(1.0, move_timer / MOVE_INTERVAL)
-        )
+        if game_state == "PLAYING":
+            progress = min(1.0, move_timer / MOVE_INTERVAL)
+        elif game_state in ["DYING", "GAMEOVER"]:
+            progress = death_progress
+        else:
+            progress = 1.0
+
         smooth_pts = get_smooth_snake_points(
             snake, prev_tail, progress, just_grew, board_x, board_y
         )
 
-        # انیمیشن طبیعی برگشت به عقب (Recoil) در زمان مرگ، مستقیم در خلاف جهت سر و بدون کج شدن
+        # محاسبه مقدار عقب‌نشینی صاف (فقط به سمت عقب، بدون هیچ انحراف چپ و راستی)
+        recoil_px = 0.0
         if game_state in ["DYING", "GAMEOVER"]:
-            recoil_p = min(1.0, dying_timer / 0.22)
-            recoil_dist = math.sin(recoil_p * (math.pi / 2)) * 13.0
-            dx_c, dy_c = direction
-            hx, hy = smooth_pts[0]
-            smooth_pts[0] = (
-                hx - dx_c * recoil_dist,
-                hy - dy_c * recoil_dist,
-            )
+            recoil_p = min(1.0, dying_timer / 0.18)
+            recoil_px = math.sin(recoil_p * (math.pi / 2.0)) * 12.0
 
         hx, hy = smooth_pts[0]
 
@@ -1263,7 +1291,9 @@ def main():
             part["life"] -= dt_sec * 3.0
         particles = [part for part in particles if part["life"] > 0]
 
-        apple_center_px = cell_center(apple)
+        apple_center_px = (
+            cell_center(apple) if apple is not None else (hx, hy)
+        )
         dist_px = math.hypot(hx - apple_center_px[0], hy - apple_center_px[1])
 
         if game_state in ["DYING", "GAMEOVER"]:
@@ -1312,13 +1342,14 @@ def main():
                     ),
                 )
 
-        draw_apple_at_center(
-            screen,
-            apple_center_px[0],
-            apple_center_px[1],
-            scale=apple_spawn_scale,
-            has_shadow=True,
-        )
+        if apple is not None:
+            draw_apple_at_center(
+                screen,
+                apple_center_px[0],
+                apple_center_px[1],
+                scale=apple_spawn_scale,
+                has_shadow=True,
+            )
 
         target_look = (
             (eating_apple["x"], eating_apple["y"])
@@ -1336,6 +1367,7 @@ def main():
             eating_apple,
             is_dizzy=is_dizzy,
             dizzy_timer=dying_timer,
+            recoil_px=recoil_px,
         )
 
         for part in particles:
@@ -1346,7 +1378,7 @@ def main():
                 max(1, int(part["r"] * part["life"])),
             )
 
-        if game_state == "GAMEOVER":
+        if game_state in ["GAMEOVER", "WON"]:
             draw_menu_card_modal(screen, score, high_score)
 
         pygame.display.flip()
