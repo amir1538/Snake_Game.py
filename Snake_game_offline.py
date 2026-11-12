@@ -1,19 +1,17 @@
-import ctypes
 import io
+import json
 import math
 import os
 import random
-import shutil
 import struct
-import subprocess
 import sys
-import tempfile
 import wave
 import pygame
 
-# راه‌اندازی صدای بدون تاخیر با کیفیت استودیویی
-pygame.mixer.pre_init(44100, -16, 1, 512)
+# راه‌اندازی صدای بازی
+pygame.mixer.pre_init(44100, -16, 2, 512)
 pygame.init()
+pygame.mixer.set_num_channels(16)
 
 # ابعاد استاندارد صفحه
 GRID_SIZE = 32
@@ -44,25 +42,22 @@ COLOR_LEAF = (74, 150, 44)
 COLOR_STEM = (120, 90, 50)
 COLOR_WHITE = (255, 255, 255)
 
-# رنگ‌های مدرن کارت منو
 COLOR_CARD_SKY = (88, 204, 252)
 COLOR_BTN_BLUE = (26, 115, 232)
-COLOR_BTN_HOVER = (66, 133, 244)
 
 screen = pygame.display.set_mode(
     (SCREEN_WIDTH, SCREEN_HEIGHT), pygame.HWSURFACE | pygame.DOUBLEBUF
 )
-pygame.display.set_caption("Google Snake - Straight Recoil Edition")
+pygame.display.set_caption("Google Snake")
 clock = pygame.time.Clock()
 
-# فونت‌های مدرن و تمیز
 font_top = pygame.font.SysFont("segoeui", 26, bold=True)
 font_card_score = pygame.font.SysFont("segoeui", 38, bold=True)
 font_btn = pygame.font.SysFont("segoeui", 22, bold=True)
 
 
 # ==========================================
-# مدیریت صداها (حرکت تصادفی + گاز زدن + مرگ)
+# مسیر پوشه بازی، پوشه sound و ذخیره دائمی رکورد
 # ==========================================
 def get_project_dir():
     if "__file__" in globals():
@@ -70,15 +65,44 @@ def get_project_dir():
     return os.getcwd()
 
 
-def save_wav_file(filepath, samples, sr=44100):
-    with wave.open(filepath, "w") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(sr)
-        packed = struct.pack(f"<{len(samples)}h", *samples)
-        wf.writeframesraw(packed)
+PROJECT_DIR = get_project_dir()
+SOUND_DIR = os.path.join(PROJECT_DIR, "sound")
+HIGHSCORE_FILE = os.path.join(PROJECT_DIR, "highscore.json")
 
 
+def load_high_score():
+    if os.path.isfile(HIGHSCORE_FILE):
+        try:
+            with open(HIGHSCORE_FILE, "r", encoding="utf-8") as f:
+                return int(json.load(f).get("high_score", 0))
+        except Exception:
+            pass
+    return 0
+
+
+def save_high_score(val):
+    try:
+        with open(HIGHSCORE_FILE, "w", encoding="utf-8") as f:
+            json.dump({"high_score": int(val)}, f)
+    except Exception:
+        pass
+
+
+# ==========================================
+# بارگذاری مستقیم sound/eat_apple.wav (بدون ساختن هیچ فایل جدیدی)
+# ==========================================
+EAT_APPLE_PATH = os.path.join(SOUND_DIR, "eat_apple.wav")
+if not os.path.isfile(EAT_APPLE_PATH):
+    # اگر کنار خود فایل پایتون هم بود چک کند
+    EAT_APPLE_PATH = os.path.join(PROJECT_DIR, "eat_apple.wav")
+
+sound_eat = pygame.mixer.Sound(EAT_APPLE_PATH)
+sound_eat.set_volume(1.0)
+
+
+# ==========================================
+# بارگذاری صداهای حرکت (از پوشه sound یا پوشه اصلی)
+# ==========================================
 def _to_wav_sound(samples):
     buf = io.BytesIO()
     with wave.open(buf, "w") as wf:
@@ -114,12 +138,8 @@ def generate_move_pop_samples(f_start, f_end, dur=0.065):
 
 class RandomTurnSoundManager:
     def __init__(self):
-        self.project_dir = get_project_dir()
         self.sounds = []
         self.last_idx = -1
-        self._prepare_move_wav_files()
-
-    def _prepare_move_wav_files(self):
         presets = [
             ("move_1.wav", 168.0, 125.0, 0.068),
             ("move_2.wav", 198.0, 152.0, 0.064),
@@ -127,24 +147,21 @@ class RandomTurnSoundManager:
             ("move_4.wav", 262.0, 215.0, 0.060),
         ]
         for filename, f1, f2, dur in presets:
-            wav_path = os.path.join(self.project_dir, filename)
-            if not os.path.isfile(wav_path):
-                samples = generate_move_pop_samples(f1, f2, dur)
-                try:
-                    save_wav_file(wav_path, samples)
-                except Exception:
-                    pass
+            wav_in_sound = os.path.join(SOUND_DIR, filename)
+            wav_in_root = os.path.join(PROJECT_DIR, filename)
+            wav_path = wav_in_sound if os.path.isfile(wav_in_sound) else wav_in_root
+
             if os.path.isfile(wav_path):
                 try:
-                    self.sounds.append(pygame.mixer.Sound(wav_path))
+                    s = pygame.mixer.Sound(wav_path)
+                    s.set_volume(0.85)
+                    self.sounds.append(s)
+                    continue
                 except Exception:
-                    self.sounds.append(
-                        _to_wav_sound(generate_move_pop_samples(f1, f2, dur))
-                    )
-            else:
-                self.sounds.append(
-                    _to_wav_sound(generate_move_pop_samples(f1, f2, dur))
-                )
+                    pass
+            self.sounds.append(
+                _to_wav_sound(generate_move_pop_samples(f1, f2, dur))
+            )
 
     def play_random(self):
         if not self.sounds:
@@ -156,181 +173,6 @@ class RandomTurnSoundManager:
         chosen = random.choice(available)
         self.last_idx = chosen
         self.sounds[chosen].play()
-
-
-def synthesize_exact_apple_crunch():
-    sr = 44100
-    dur = 0.28
-    n = int(sr * dur)
-    buf = [0.0] * n
-    rng = random.Random(2026)
-    crunch_clusters = [
-        (0.015, 0.085, 42, 1.00),
-        (0.095, 0.175, 48, 0.92),
-        (0.180, 0.245, 22, 0.45),
-    ]
-    for t_start, t_end, num_grains, cluster_gain in crunch_clusters:
-        for _ in range(num_grains):
-            gt = rng.uniform(t_start, t_end)
-            start_idx = int(gt * sr)
-            grain_dur = rng.uniform(0.0012, 0.0045)
-            g_len = int(grain_dur * sr)
-            f_Snap = rng.uniform(2200.0, 5400.0)
-            f_Body = rng.uniform(750.0, 1450.0)
-            f_Hollow = rng.uniform(320.0, 580.0)
-            amp = rng.uniform(0.35, 1.0) * cluster_gain
-            decay_rate = rng.uniform(900.0, 1800.0)
-            prev_n = 0.0
-            for k in range(g_len):
-                idx = start_idx + k
-                if idx >= n:
-                    break
-                lt = k / sr
-                env = math.exp(-lt * decay_rate)
-                raw_n = rng.random() * 2.0 - 1.0
-                hp_n = raw_n - 0.65 * prev_n
-                prev_n = raw_n
-                snap = (
-                    0.50 * hp_n
-                    + 0.30 * math.sin(2.0 * math.pi * f_Snap * lt)
-                    + 0.15 * math.sin(2.0 * math.pi * f_Body * lt)
-                    + 0.05 * math.sin(2.0 * math.pi * f_Hollow * lt)
-                )
-                buf[idx] += snap * env * amp
-
-    samples = []
-    prev_x = 0.0
-    prev_y = 0.0
-    for i in range(n):
-        x = buf[i]
-        y = 0.94 * (prev_y + x - prev_x)
-        prev_x = x
-        prev_y = y
-        saturated = math.tanh(y * 2.4)
-        samples.append(max(-32767, min(32767, int(saturated * 0.92 * 32767))))
-    return _to_wav_sound(samples)
-
-
-class ExactEatSoundPlayer:
-    def __init__(self):
-        self.project_dir = get_project_dir()
-        self.pygame_sound = None
-        self.mci_alias = None
-        self.synth_crunch = synthesize_exact_apple_crunch()
-        self._load_user_audio_file()
-
-    def _find_audio_file(self):
-        project_audio_files = [
-            os.path.join(self.project_dir, "eat_apple.wav"),
-            os.path.join(self.project_dir, "sound", "eat_apple.wav"),
-        ]
-        for filepath in project_audio_files:
-            if os.path.isfile(filepath):
-                return filepath
-
-        target_names = {
-            "soundeffect eat apple.m4a",
-            "soundeffect eat apple.mp3",
-            "soundeffect eat apple.wav",
-            "eat.m4a",
-            "eat.mp3",
-            "eat.wav",
-            "eat_apple.wav",
-        }
-        roots = [
-            self.project_dir,
-            os.getcwd(),
-            os.path.expanduser("~/Downloads"),
-            os.path.expanduser("~/Desktop"),
-        ]
-        for r in roots:
-            if not os.path.isdir(r):
-                continue
-            for dirpath, dirnames, filenames in os.walk(r):
-                depth = dirpath[len(r) :].count(os.sep)
-                if depth > 2:
-                    dirnames[:] = []
-                    continue
-                for fn in filenames:
-                    if fn.lower() in target_names:
-                        return os.path.join(dirpath, fn)
-        return None
-
-    def _convert_m4a_to_wav(self, src_path):
-        out_wav = os.path.join(
-            tempfile.gettempdir(), "google_snake_exact_eat.wav"
-        )
-        try:
-            subprocess.run(
-                [
-                    "ffmpeg",
-                    "-y",
-                    "-i",
-                    src_path,
-                    "-ac",
-                    "1",
-                    "-ar",
-                    "44100",
-                    out_wav,
-                ],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=4,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
-            if os.path.isfile(out_wav) and os.path.getsize(out_wav) > 200:
-                return out_wav
-        except Exception:
-            pass
-        return None
-
-    def _load_user_audio_file(self):
-        filepath = self._find_audio_file()
-        if not filepath:
-            return
-        try:
-            self.pygame_sound = pygame.mixer.Sound(filepath)
-            return
-        except Exception:
-            pass
-        wav_path = self._convert_m4a_to_wav(filepath)
-        if wav_path:
-            try:
-                self.pygame_sound = pygame.mixer.Sound(wav_path)
-                return
-            except Exception:
-                pass
-        if sys.platform == "win32":
-            try:
-                ext = os.path.splitext(filepath)[1]
-                temp_audio = os.path.join(
-                    tempfile.gettempdir(), f"gsnake_eat{ext}"
-                )
-                shutil.copyfile(filepath, temp_audio)
-                winmm = ctypes.windll.winmm
-                winmm.mciSendStringW("close eat_sfx", None, 0, 0)
-                if (
-                    winmm.mciSendStringW(
-                        f'open "{temp_audio}" alias eat_sfx', None, 0, 0
-                    )
-                    == 0
-                ):
-                    self.mci_alias = "eat_sfx"
-            except Exception:
-                pass
-
-    def play(self):
-        if self.pygame_sound is not None:
-            self.pygame_sound.play()
-        elif self.mci_alias and sys.platform == "win32":
-            winmm = ctypes.windll.winmm
-            err = winmm.mciSendStringW(
-                f"play {self.mci_alias} from 0", None, 0, 0
-            )
-            if err != 0:
-                self.synth_crunch.play()
-        else:
-            self.synth_crunch.play()
 
 
 def make_die_sound():
@@ -382,7 +224,6 @@ def make_click_sound():
     return _to_wav_sound(samples)
 
 
-sound_eat = ExactEatSoundPlayer()
 sound_die = make_die_sound()
 sound_click = make_click_sound()
 turn_sound_manager = RandomTurnSoundManager()
@@ -566,23 +407,6 @@ def get_smooth_snake_points(
     return pts
 
 
-def sample_point_on_polyline(pts, dist_px):
-    if dist_px < 0 or len(pts) < 2:
-        return None
-    accum = 0.0
-    for i in range(len(pts) - 1):
-        x1, y1 = pts[i]
-        x2, y2 = pts[i + 1]
-        seg_len = math.hypot(x2 - x1, y2 - y1)
-        if seg_len == 0:
-            continue
-        if accum + seg_len >= dist_px:
-            ratio = (dist_px - accum) / seg_len
-            return (x1 + (x2 - x1) * ratio, y1 + (y2 - y1) * ratio)
-        accum += seg_len
-    return None
-
-
 def build_curved_spine(pts, corner_radius=15.0, arc_steps=12):
     if len(pts) < 3:
         return list(pts)
@@ -654,7 +478,6 @@ def draw_smooth_snake(
     dx, dy = head_dir_vec
     num_u = len(uniform_pts)
 
-    # در هنگام بازی عادی زاویه سر نرم می‌شود، اما هنگام برخورد دقیقاً در جهت حرکت قفل می‌ماند تا چپ و راست نرود
     if not is_dizzy and num_u > 5:
         tx_dir = uniform_pts[0][0] - uniform_pts[5][0]
         ty_dir = uniform_pts[0][1] - uniform_pts[5][1]
@@ -666,9 +489,9 @@ def draw_smooth_snake(
             if b_len > 0.001:
                 dx, dy = bx / b_len, by / b_len
 
-    # اعمال عقب‌نشینی کاملاً صاف (Straight Backward Recoil) بدون کج شدن به چپ و راست
+    # عقب‌نشینی صاف به عقب موقع برخورد
     if recoil_px > 0.0:
-        recoil_span = 65.0  # طول بخشی از گردن و سر که به آرامی به عقب جمع می‌شود
+        recoil_span = 65.0
         for i in range(num_u):
             if cum_lengths[i] < recoil_span:
                 factor = math.cos((cum_lengths[i] / recoil_span) * (math.pi / 2.0))
@@ -702,7 +525,6 @@ def draw_smooth_snake(
                 )
         return int(round(r_base + extra_bulge))
 
-    # ۱. سایه یکپارچه زیر بدن و سر
     for i in range(num_u - 1, -1, -1):
         ratio = cum_lengths[i] / max(1.0, total_len)
         rad = radius_at(cum_lengths[i], ratio)
@@ -734,7 +556,6 @@ def draw_smooth_snake(
         )
         pygame.draw.polygon(surface, COLOR_SHADOW, shadow_jaw)
 
-    # ۲. رسم نوار پیوسته و منحنی بدن
     for i in range(num_u - 1, -1, -1):
         ratio = cum_lengths[i] / max(1.0, total_len)
         rad = radius_at(cum_lengths[i], ratio)
@@ -745,7 +566,6 @@ def draw_smooth_snake(
             rad,
         )
 
-    # ۳. زبان
     if mouth_anim < 0.12 and not is_dizzy:
         t_wave = (math.sin(pygame.time.get_ticks() * 0.012) + 1) * 0.5
         if t_wave > 0.35:
@@ -770,7 +590,6 @@ def draw_smooth_snake(
                 2,
             )
 
-    # ۴. سر و پوزه گرد
     pygame.draw.circle(
         surface,
         COLOR_SNAKE_HEAD,
@@ -784,7 +603,6 @@ def draw_smooth_snake(
         snake_radius - 1,
     )
 
-    # ۵. دهان باز نیم‌دایره‌ای
     if mouth_anim > 0.04 and not is_dizzy:
         lip_cx = hx + dx * 6
         lip_cy = hy + dy * 6
@@ -824,7 +642,6 @@ def draw_smooth_snake(
                 ]
                 pygame.draw.polygon(surface, COLOR_WHITE, fang_pts)
 
-    # ۶. چشم‌ها و سوراخ‌های بینی
     look_x, look_y = dx, dy
     dist_to_apple = math.hypot(apple_px[0] - hx, apple_px[1] - hy)
     if dist_to_apple > 1:
@@ -837,7 +654,7 @@ def draw_smooth_snake(
         pygame.draw.circle(surface, COLOR_SNAKE_HEAD, (int(ex), int(ey)), 8)
         eye_white_r = 6 if (is_dizzy and idx == 0) else 5.5
         pygame.draw.circle(
-            surface, COLOR_WHITE, (int(ex), int(ey)), int(round(eye_white_r))
+            surface, COLOR_WHITE, (int(ex), int(ey)), eye_white_r
         )
         if is_dizzy:
             ang = dizzy_timer * 14.0 * side + (idx * 2.4)
@@ -845,10 +662,7 @@ def draw_smooth_snake(
             py_off = ey + math.sin(ang) * 2.4
             pupil_r = 3.5 if idx == 0 else 2.8
             pygame.draw.circle(
-                surface,
-                COLOR_PUPIL,
-                (int(px_off), int(py_off)),
-                int(round(pupil_r)),
+                surface, COLOR_PUPIL, (int(px_off), int(py_off)), pupil_r
             )
         else:
             px_off = ex + look_x * 2.0
@@ -858,7 +672,7 @@ def draw_smooth_snake(
             )
         nx = hx + dx * 4.5 + px * 3.5 * side
         ny = hy + dy * 4.5 + py * 3.5 * side
-        pygame.draw.circle(surface, COLOR_PUPIL, (int(nx), int(ny)), 2)
+        pygame.draw.circle(surface, COLOR_PUPIL, (int(nx), int(ny)), 1.5)
 
 
 def draw_menu_card_modal(surface, score, high_score):
@@ -928,7 +742,7 @@ def draw_menu_card_modal(surface, score, high_score):
 
     for ex in [eye1_x, eye2_x]:
         pygame.draw.circle(card_surf, COLOR_WHITE, (ex, eye_y), 7)
-        pygame.draw.circle(card_surf, COLOR_PUPIL, (ex - 2, eye_y - 1), 4)
+        pygame.draw.circle(card_surf, COLOR_PUPIL, (ex - 2, eye_y - 1), 3.5)
 
     pygame.draw.ellipse(
         card_surf, COLOR_PUPIL, (172, snake_y + 2, 2.5, 5)
@@ -1014,13 +828,13 @@ def main():
     smooth_head_dir = [float(direction[0]), float(direction[1])]
 
     score = 0
-    high_score = 0
+    high_score = load_high_score()
     muted = False
 
     game_state = "WAITING"
     dying_timer = 0.0
     DYING_DURATION = 0.85
-    death_progress = 1.0  # ذخیره پیشرفت دقیق لحظه مرگ برای جلوگیری از پرش به چپ/راست
+    death_progress = 1.0
 
     MOVE_INTERVAL = 145.0
     move_timer = MOVE_INTERVAL
@@ -1032,6 +846,7 @@ def main():
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
+                save_high_score(high_score)
                 pygame.quit()
                 sys.exit()
 
@@ -1042,7 +857,7 @@ def main():
                     and 10 <= my <= 50
                 ):
                     muted = not muted
-                elif game_state in ["GAMEOVER", "WON"]:
+                elif game_state == "GAMEOVER":
                     if not muted:
                         sound_click.play()
                     snake, direction, apple = reset_state()
@@ -1062,7 +877,7 @@ def main():
                 if event.key == pygame.K_m:
                     muted = not muted
 
-                elif game_state in ["GAMEOVER", "WON"] and event.key in [
+                elif game_state == "GAMEOVER" and event.key in [
                     pygame.K_SPACE,
                     pygame.K_RETURN,
                 ]:
@@ -1137,7 +952,6 @@ def main():
             while move_timer >= MOVE_INTERVAL:
                 move_timer -= MOVE_INTERVAL
 
-                # قبل از تغییر جهت جدید، بررسی می‌کنیم آیا ادامه حرکت فعلی به مانع خورده یا خیر
                 next_dir = input_queue.pop(0) if input_queue else direction
                 head_x, head_y = snake[0]
                 new_head = (head_x + next_dir[0], head_y + next_dir[1])
@@ -1149,7 +963,6 @@ def main():
                     or new_head[1] >= GRID_HEIGHT
                     or new_head in snake[:-1]
                 ):
-                    # قفل کردن جهت و موقعیت دقیق در لحظه برخورد تا مار به چپ یا راست نچرخد
                     direction = next_dir
                     smooth_head_dir = [float(direction[0]), float(direction[1])]
                     death_progress = 1.0
@@ -1157,6 +970,7 @@ def main():
                     dying_timer = 0.0
                     mouth_anim = 0.0
                     eating_apple = None
+                    save_high_score(high_score)
                     if not muted:
                         sound_die.play()
                     break
@@ -1168,6 +982,30 @@ def main():
                     if new_head == apple:
                         just_grew = True
                         ax, ay = cell_center(apple)
+
+                        # پخش مستقیم فایل sound/eat_apple.wav و ذخیره رکورد
+                        score += 1
+                        if score > high_score:
+                            high_score = score
+                            save_high_score(high_score)
+                        if not muted:
+                            sound_eat.play()
+                        bulges.append(6.0)
+
+                        for _ in range(8):
+                            ang = random.uniform(0, 2 * math.pi)
+                            spd = random.uniform(55, 125)
+                            particles.append(
+                                {
+                                    "x": ax,
+                                    "y": ay,
+                                    "vx": math.cos(ang) * spd,
+                                    "vy": math.sin(ang) * spd,
+                                    "r": random.uniform(2.5, 4.5),
+                                    "life": 1.0,
+                                }
+                            )
+
                         eating_apple = {
                             "start_x": ax,
                             "start_y": ay,
@@ -1176,20 +1014,15 @@ def main():
                             "scale": 1.0,
                             "timer": 0.0,
                             "duration": MOVE_INTERVAL * 0.95,
-                            "chomped": False,
                         }
-                        free_cells = [
-                            (col, row)
-                            for row in range(GRID_HEIGHT)
-                            for col in range(GRID_WIDTH)
-                            if (col, row) not in snake
-                        ]
-                        if free_cells:
-                            apple = random.choice(free_cells)
-                            apple_spawn_scale = 0.0
-                        else:
-                            apple = None
-                            game_state = "WON"
+                        while True:
+                            apple = (
+                                random.randint(0, GRID_WIDTH - 1),
+                                random.randint(0, GRID_HEIGHT - 1),
+                            )
+                            if apple not in snake:
+                                break
+                        apple_spawn_scale = 0.0
                     else:
                         just_grew = False
                         snake.pop()
@@ -1226,7 +1059,6 @@ def main():
             snake, prev_tail, progress, just_grew, board_x, board_y
         )
 
-        # محاسبه مقدار عقب‌نشینی صاف (فقط به سمت عقب، بدون هیچ انحراف چپ و راستی)
         recoil_px = 0.0
         if game_state in ["DYING", "GAMEOVER"]:
             recoil_p = min(1.0, dying_timer / 0.18)
@@ -1252,29 +1084,6 @@ def main():
             else:
                 eating_apple["scale"] = max(0.0, 1.0 - ((p - 0.45) / 0.55))
 
-            if p >= 0.45 and not eating_apple["chomped"]:
-                eating_apple["chomped"] = True
-                score += 1
-                if score > high_score:
-                    high_score = score
-                if not muted:
-                    sound_eat.play()
-                bulges.append(6.0)
-
-                for _ in range(8):
-                    ang = random.uniform(0, 2 * math.pi)
-                    spd = random.uniform(55, 125)
-                    particles.append(
-                        {
-                            "x": eating_apple["x"],
-                            "y": eating_apple["y"],
-                            "vx": math.cos(ang) * spd,
-                            "vy": math.sin(ang) * spd,
-                            "r": random.uniform(2.5, 4.5),
-                            "life": 1.0,
-                        }
-                    )
-
             if p >= 1.0:
                 eating_apple = None
 
@@ -1291,9 +1100,7 @@ def main():
             part["life"] -= dt_sec * 3.0
         particles = [part for part in particles if part["life"] > 0]
 
-        apple_center_px = (
-            cell_center(apple) if apple is not None else (hx, hy)
-        )
+        apple_center_px = cell_center(apple)
         dist_px = math.hypot(hx - apple_center_px[0], hy - apple_center_px[1])
 
         if game_state in ["DYING", "GAMEOVER"]:
@@ -1342,14 +1149,13 @@ def main():
                     ),
                 )
 
-        if apple is not None:
-            draw_apple_at_center(
-                screen,
-                apple_center_px[0],
-                apple_center_px[1],
-                scale=apple_spawn_scale,
-                has_shadow=True,
-            )
+        draw_apple_at_center(
+            screen,
+            apple_center_px[0],
+            apple_center_px[1],
+            scale=apple_spawn_scale,
+            has_shadow=True,
+        )
 
         target_look = (
             (eating_apple["x"], eating_apple["y"])
@@ -1378,7 +1184,7 @@ def main():
                 max(1, int(part["r"] * part["life"])),
             )
 
-        if game_state in ["GAMEOVER", "WON"]:
+        if game_state == "GAMEOVER":
             draw_menu_card_modal(screen, score, high_score)
 
         pygame.display.flip()
