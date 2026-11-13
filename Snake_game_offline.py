@@ -69,15 +69,33 @@ font_btn = pygame.font.SysFont("segoeui", 21, bold=True)
 # ==========================================
 # مسیر پوشه بازی، پوشه sound و ذخیره دائمی رکورد
 # ==========================================
-def get_project_dir():
+# ==========================================
+# مسیر پوشه بازی، پوشه sound و پوشه data برای رکوردهای دائمی
+# ==========================================
+def get_base_dir():
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
     if "__file__" in globals():
         return os.path.dirname(os.path.abspath(__file__))
     return os.getcwd()
 
+def get_resource_dir():
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return sys._MEIPASS
+    return get_base_dir()
 
-PROJECT_DIR = get_project_dir()
-SOUND_DIR = os.path.join(PROJECT_DIR, "sound")
-HIGHSCORE_FILE = os.path.join(PROJECT_DIR, "highscore.json")
+PROJECT_DIR = get_base_dir()
+RESOURCE_DIR = get_resource_dir()
+
+SOUND_DIR = os.path.join(RESOURCE_DIR, "sound")
+if not os.path.isdir(SOUND_DIR):
+    SOUND_DIR = os.path.join(PROJECT_DIR, "sound")
+
+DATA_DIR = os.path.join(PROJECT_DIR, "data")
+if not os.path.exists(DATA_DIR):
+    os.makedirs(DATA_DIR)
+
+HIGHSCORE_FILE = os.path.join(DATA_DIR, "highscore.json")
 
 
 def load_high_score():
