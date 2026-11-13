@@ -1,3 +1,4 @@
+import ctypes
 import io
 import json
 import math
@@ -24,77 +25,64 @@ SCREEN_WIDTH = (GRID_WIDTH * GRID_SIZE) + (BORDER_SIZE * 2)
 SCREEN_HEIGHT = (GRID_HEIGHT * GRID_SIZE) + TOP_BAR_HEIGHT + (BORDER_SIZE * 2)
 
 # ==========================================
-# پالت رنگی شاداب و پررنگ (Vibrant Google Snake Palette)
+# پالت رنگی شاداب و پررنگ (Vibrant Game Snake Palette)
 # ==========================================
-COLOR_TOP_BAR = (74, 117, 44)         # سبز تیره غنی برای هدر بالا
-COLOR_BORDER = (87, 138, 52)          # سبز پررنگ حاشیه دور زمین
-COLOR_LIGHT_GREEN = (170, 215, 81)    # سبز روشن شاداب خانه‌های شطرنجی
-COLOR_DARK_GREEN = (162, 209, 73)     # سبز تیره شاداب خانه‌های شطرنجی
-COLOR_SHADOW = (130, 175, 55)         # سایه خوش‌رنگ زیر مار و سیب
+COLOR_TOP_BAR = (74, 117, 44)
+COLOR_BORDER = (87, 138, 52)
+COLOR_LIGHT_GREEN = (170, 215, 81)
+COLOR_DARK_GREEN = (162, 209, 73)
+COLOR_SHADOW = (130, 175, 55)
 
-# رنگ‌های پررنگ و زنده مار (مطابق عکس ارسالی)
-COLOR_SNAKE_HEAD = (78, 124, 246)     # آبی روشن و زنده
-COLOR_SNAKE_TAIL = (62, 104, 230)     # آبی عمیق‌تر برای انتهای دم
-COLOR_SNAKE_OUTLINE = (60, 102, 224)  # خط دور ظریف برای برجسته‌تر شدن
-COLOR_MOUTH_INSIDE = (24, 54, 142)    # سرمه‌ای داخل دهان
-COLOR_PUPIL = (24, 52, 138)           # سرمه‌ای تیره مردمک چشم و سوراخ بینی
+COLOR_SNAKE_HEAD = (78, 124, 246)
+COLOR_SNAKE_TAIL = (62, 104, 230)
+COLOR_SNAKE_OUTLINE = (60, 102, 224)
+COLOR_MOUTH_INSIDE = (24, 54, 142)
+COLOR_PUPIL = (24, 52, 138)
 COLOR_TONGUE = (235, 65, 25)
 
-# رنگ‌های سیب (قرمز-نارنجی آتشی و برگ سبز زنده مطابق عکس)
 COLOR_APPLE = (234, 62, 24)
-COLOR_APPLE_DARK = (205, 45, 15)
 COLOR_APPLE_HIGHLIGHT = (246, 132, 102)
 COLOR_LEAF = (82, 172, 42)
 COLOR_STEM = (118, 84, 46)
 COLOR_WHITE = (255, 255, 255)
 
-# رنگ‌های کارت منو و دکمه‌ها (پررنگ و مدرن مطابق تصویر)
 COLOR_CARD_SKY = (76, 194, 248)
 COLOR_CARD_GRASS_1 = (150, 214, 68)
 COLOR_CARD_GRASS_2 = (134, 198, 56)
 COLOR_BTN_BLUE = (17, 85, 204)
 COLOR_BTN_HOVER = (28, 102, 228)
 
-screen = pygame.display.set_mode(
-    (SCREEN_WIDTH, SCREEN_HEIGHT), pygame.HWSURFACE | pygame.DOUBLEBUF
-)
-pygame.display.set_caption("Google Snake")
-clock = pygame.time.Clock()
 
-font_top = pygame.font.SysFont("segoeui", 26, bold=True)
-font_card_score = pygame.font.SysFont("segoeui", 38, bold=True)
-font_btn = pygame.font.SysFont("segoeui", 21, bold=True)
-
-
-# ==========================================
-# مسیر پوشه بازی، پوشه sound و ذخیره دائمی رکورد
-# ==========================================
 # ==========================================
 # مسیر پوشه بازی، پوشه sound و پوشه data برای رکوردهای دائمی
 # ==========================================
 def get_base_dir():
+    """مسیر اصلی پروژه (کنار فایل اجرایی یا اسکریپت)"""
     if getattr(sys, "frozen", False):
         return os.path.dirname(sys.executable)
     if "__file__" in globals():
         return os.path.dirname(os.path.abspath(__file__))
     return os.getcwd()
 
+
 def get_resource_dir():
+    """مسیر منابع در حالت EXE (استخراج در پوشه موقت ویندوز)"""
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
         return sys._MEIPASS
     return get_base_dir()
 
+
 PROJECT_DIR = get_base_dir()
 RESOURCE_DIR = get_resource_dir()
 
+# ۱. تنظیم مسیر پوشه صداها (sound)
 SOUND_DIR = os.path.join(RESOURCE_DIR, "sound")
 if not os.path.isdir(SOUND_DIR):
     SOUND_DIR = os.path.join(PROJECT_DIR, "sound")
 
+# ۲. ساخت خودکار پوشه data و ذخیره رکورد داخل data/highscore.json
 DATA_DIR = os.path.join(PROJECT_DIR, "data")
-if not os.path.exists(DATA_DIR):
-    os.makedirs(DATA_DIR)
-
+os.makedirs(DATA_DIR, exist_ok=True)
 HIGHSCORE_FILE = os.path.join(DATA_DIR, "highscore.json")
 
 
@@ -110,10 +98,44 @@ def load_high_score():
 
 def save_high_score(val):
     try:
+        os.makedirs(DATA_DIR, exist_ok=True)
         with open(HIGHSCORE_FILE, "w", encoding="utf-8") as f:
             json.dump({"high_score": int(val)}, f)
     except Exception:
         pass
+
+
+# ==========================================
+# تنظیم پنجره و آیکون بازی (سازگار با پایتون و EXE)
+# ==========================================
+if sys.platform == "win32":
+    try:
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            "amir.gamesnake.clone.1"
+        )
+    except Exception:
+        pass
+
+screen = pygame.display.set_mode(
+    (SCREEN_WIDTH, SCREEN_HEIGHT), pygame.HWSURFACE | pygame.DOUBLEBUF
+)
+pygame.display.set_caption("Snake Game")
+
+ICON_PATH_PNG = os.path.join(RESOURCE_DIR, "icon.png")
+if not os.path.isfile(ICON_PATH_PNG):
+    ICON_PATH_PNG = os.path.join(PROJECT_DIR, "icon.png")
+
+if os.path.isfile(ICON_PATH_PNG):
+    try:
+        game_icon = pygame.image.load(ICON_PATH_PNG)
+        pygame.display.set_icon(game_icon)
+    except Exception:
+        pass
+
+clock = pygame.time.Clock()
+font_top = pygame.font.SysFont("segoeui", 26, bold=True)
+font_card_score = pygame.font.SysFont("segoeui", 38, bold=True)
+font_btn = pygame.font.SysFont("segoeui", 21, bold=True)
 
 
 # ==========================================
@@ -269,16 +291,14 @@ turn_sound_manager = RandomTurnSoundManager()
 
 
 def set_global_mute(muted):
-    """قطع یا وصل فوری تمام کانال‌های صوتی هنگام کلیک روی آیکون بلندگو"""
     if muted:
         pygame.mixer.stop()
 
 
 # ==========================================
-# توابع گرافیکی (سیب، جام، بلندگو و مار مطابق تصاویر شما)
+# توابع گرافیکی (سیب، جام، بلندگو و مار)
 # ==========================================
 def draw_rotated_ellipse(surface, color, center, rx, ry, angle_deg):
-    """رسم بیضی کج (برای هایلایت روی سیب و برگ سیب دقیقاً مثل تصویر اصلی)"""
     if rx < 1 or ry < 1:
         return
     pts = []
@@ -296,7 +316,6 @@ def draw_rotated_ellipse(surface, color, center, rx, ry, angle_deg):
 
 
 def draw_apple_at_center(surface, cx, cy, scale=1.0, has_shadow=True):
-    """رسم دقیق سیب گوگل با هایلایت بیضی کج، ساقه و برگ نوک‌تیز"""
     if scale <= 0.05:
         return
     radius = max(2, int((GRID_SIZE // 2 - 2) * scale))
@@ -309,7 +328,6 @@ def draw_apple_at_center(surface, cx, cy, scale=1.0, has_shadow=True):
             (cx - radius, int(cy + radius * 0.35), radius * 2, int(radius * 0.85)),
         )
 
-    # بدنه اصلی سیب (کمی پهن‌تر در عرض برای شباهت کامل به سیب گوگل)
     apple_rect = pygame.Rect(
         cx - radius,
         cy - int(radius * 0.92),
@@ -319,7 +337,6 @@ def draw_apple_at_center(surface, cx, cy, scale=1.0, has_shadow=True):
     pygame.draw.ellipse(surface, COLOR_APPLE, apple_rect)
 
     if radius >= 5:
-        # هایلایت بیضی کج (۴۰ درجه) در بالا سمت چپ سیب مطابق عکس
         hl_cx = cx - int(radius * 0.38)
         hl_cy = cy - int(radius * 0.32)
         draw_rotated_ellipse(
@@ -331,7 +348,6 @@ def draw_apple_at_center(surface, cx, cy, scale=1.0, has_shadow=True):
             -38,
         )
 
-        # چوب سیب (ساقه قهوه‌ای)
         stem_top_y = int(cy - radius * 0.92 - 5 * scale)
         stem_bot_y = int(cy - radius * 0.78)
         pygame.draw.line(
@@ -342,7 +358,6 @@ def draw_apple_at_center(surface, cx, cy, scale=1.0, has_shadow=True):
             max(2, int(2.6 * scale)),
         )
 
-        # برگ سبز کج در سمت راست ساقه
         leaf_cx = cx + int(5.5 * scale)
         leaf_cy = stem_top_y + int(1.5 * scale)
         draw_rotated_ellipse(
@@ -409,7 +424,6 @@ def draw_trophy(surface, cx, cy, scale=1.0):
 
 
 def draw_speaker_icon(surface, x, y, muted, hovered=False):
-    """رسم آیکون بلندگو در گوشه بالا سمت راست با قابلیت قطع و وصل صدا"""
     if hovered:
         pygame.draw.circle(surface, (92, 142, 56), (x, y), 20)
 
@@ -426,7 +440,6 @@ def draw_speaker_icon(surface, x, y, muted, hovered=False):
         ],
     )
     if muted:
-        # علامت ضربدر/خط روی بلندگو هنگام قطع بودن صدا
         pygame.draw.line(
             surface, COLOR_WHITE, (x + 8, y - 5), (x + 16, y + 5), 3
         )
@@ -587,7 +600,6 @@ def draw_smooth_snake(
             if b_len > 0.001:
                 dx, dy = bx / b_len, by / b_len
 
-    # عقب‌نشینی صاف به عقب موقع برخورد
     if recoil_px > 0.0:
         recoil_span = 65.0
         for i in range(num_u):
@@ -623,7 +635,6 @@ def draw_smooth_snake(
                 )
         return int(round(r_base + extra_bulge))
 
-    # ۱. سایه زیر بدن، سر و چشم‌ها
     for i in range(num_u - 1, -1, -1):
         ratio = cum_lengths[i] / max(1.0, total_len)
         rad = radius_at(cum_lengths[i], ratio)
@@ -655,7 +666,6 @@ def draw_smooth_snake(
         )
         pygame.draw.polygon(surface, COLOR_SHADOW, shadow_jaw)
 
-    # ۲. رسم بدنه منحنی مار
     for i in range(num_u - 1, -1, -1):
         ratio = cum_lengths[i] / max(1.0, total_len)
         rad = radius_at(cum_lengths[i], ratio)
@@ -666,7 +676,6 @@ def draw_smooth_snake(
             rad,
         )
 
-    # ۳. زبان (وقتی دهان بسته است)
     if mouth_anim < 0.12 and not is_dizzy:
         t_wave = (math.sin(pygame.time.get_ticks() * 0.012) + 1) * 0.5
         if t_wave > 0.35:
@@ -691,7 +700,6 @@ def draw_smooth_snake(
                 2,
             )
 
-    # ۴. پوزه گرد جلوی سر مار (دقیقاً مطابق عکس ارسالی شما)
     pygame.draw.circle(
         surface,
         COLOR_SNAKE_HEAD,
@@ -705,7 +713,6 @@ def draw_smooth_snake(
         snake_radius - 1,
     )
 
-    # ۵. دهان باز نیم‌دایره‌ای
     if mouth_anim > 0.04 and not is_dizzy:
         lip_cx = hx + dx * 6
         lip_cy = hy + dy * 6
@@ -745,7 +752,6 @@ def draw_smooth_snake(
                 ]
                 pygame.draw.polygon(surface, COLOR_WHITE, fang_pts)
 
-    # ۶. طراحی دقیق چشم‌ها و سوراخ‌های بینی مطابق تصویر نزدیک از مار گوگل
     look_x, look_y = dx, dy
     dist_to_apple = math.hypot(apple_px[0] - hx, apple_px[1] - hy)
     if dist_to_apple > 1:
@@ -753,19 +759,16 @@ def draw_smooth_snake(
         look_y = (apple_px[1] - hy) / dist_to_apple
 
     for idx, side in enumerate([-1, 1]):
-        # برجستگی کاسه چشم در دو طرف سر (کمی بیرون‌زده از عرض بدن مثل عکس)
         ex = hx - dx * 1.5 + px * 10.0 * side
         ey = hy - dy * 1.5 + py * 10.0 * side
         pygame.draw.circle(surface, COLOR_SNAKE_OUTLINE, (int(ex), int(ey)), 9)
         pygame.draw.circle(surface, COLOR_SNAKE_HEAD, (int(ex), int(ey)), 8)
 
-        # سفیدی درشت و گرد چشم
-        eye_white_r = 6 if (is_dizzy and idx == 0) else 6
+        eye_white_r = 6
         pygame.draw.circle(
             surface, COLOR_WHITE, (int(ex), int(ey)), eye_white_r
         )
 
-        # مردمک سرمه‌ای که به سمت سیب می‌چرخد (به لبه سفیدی چشم می‌چسبد)
         if is_dizzy:
             ang = dizzy_timer * 14.0 * side + (idx * 2.4)
             px_off = ex + math.cos(ang) * 2.5
@@ -781,7 +784,6 @@ def draw_smooth_snake(
                 surface, COLOR_PUPIL, (int(px_off), int(py_off)), 3
             )
 
-        # دو سوراخ بینی بیضی/نقطه‌ای روی پوزه جلوی چشم‌ها (دقیقاً مطابق عکس)
         nx = hx + dx * 5.8 + px * 3.6 * side
         ny = hy + dy * 5.8 + py * 3.6 * side
         pygame.draw.circle(surface, COLOR_PUPIL, (int(nx), int(ny)), 1.6)
@@ -790,10 +792,6 @@ def draw_smooth_snake(
 def draw_menu_card_modal(
     surface, score, high_score, button_label="Play Snake", mouse_pos=(0, 0)
 ):
-    """
-    رسم کارت منوی وسط صفحه (هم برای حالت استپ با دکمه Continue و هم برای پایان بازی)
-    دقیقاً مطابق تصاویر ارسالی شما
-    """
     overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
     overlay.fill((12, 22, 8, 135))
     surface.blit(overlay, (0, 0))
@@ -802,7 +800,6 @@ def draw_menu_card_modal(
     cx = (SCREEN_WIDTH - card_w) // 2
     cy = (SCREEN_HEIGHT - card_h) // 2 - 14
 
-    # سایه نرم زیر کارت
     shadow_rect = pygame.Rect(cx - 4, cy - 2, card_w + 8, card_h + 8)
     shadow_surf = pygame.Surface(
         (shadow_rect.width, shadow_rect.height), pygame.SRCALPHA
@@ -820,7 +817,6 @@ def draw_menu_card_modal(
         card_surf, COLOR_CARD_SKY, (0, 0, card_w, card_h), border_radius=12
     )
 
-    # چمن شطرنجی پررنگ در پایین کارت (۳ ردیف)
     grass_rows = 3
     cell_s = 30
     grass_top_y = card_h - grass_rows * cell_s
@@ -844,7 +840,6 @@ def draw_menu_card_modal(
         border_radius=12,
     )
 
-    # رسم مار آبی لبخندزن روی چمن وسط کارت (مطابق عکس اول شما)
     snake_y = grass_top_y - 32
     body_h = 32
     pygame.draw.rect(
@@ -860,7 +855,6 @@ def draw_menu_card_modal(
         card_surf, COLOR_SNAKE_HEAD, (122, snake_y - 6, 65, 24)
     )
 
-    # دو چشم برجسته و درشت مار روی کارت (نگاه به بالا-چپ مثل عکس)
     eye1_x, eye2_x = 122, 142
     eye_y = snake_y - 5
     pygame.draw.circle(card_surf, COLOR_SNAKE_HEAD, (eye1_x, eye_y), 11)
@@ -870,7 +864,6 @@ def draw_menu_card_modal(
         pygame.draw.circle(card_surf, COLOR_WHITE, (ex, eye_y), 7.5)
         pygame.draw.circle(card_surf, COLOR_PUPIL, (ex - 2, eye_y - 1), 4)
 
-    # سوراخ‌های بینی روی پوزه
     pygame.draw.ellipse(
         card_surf, COLOR_PUPIL, (176, snake_y + 2, 2.5, 5.5)
     )
@@ -878,7 +871,6 @@ def draw_menu_card_modal(
         card_surf, COLOR_PUPIL, (183, snake_y + 2, 2.5, 5.5)
     )
 
-    # لبخند مار روی کارت
     mouth_y = snake_y + 17
     pygame.draw.line(
         card_surf, COLOR_PUPIL, (120, mouth_y), (189, mouth_y), 2
@@ -892,12 +884,10 @@ def draw_menu_card_modal(
         2,
     )
 
-    # سیب و امتیاز در بالا سمت چپ کارت
     draw_apple_at_center(card_surf, 88, 78, scale=1.8, has_shadow=False)
     s_txt = font_card_score.render(str(score), True, COLOR_WHITE)
     card_surf.blit(s_txt, s_txt.get_rect(center=(88, 142)))
 
-    # جام طلایی و رکورد در بالا سمت راست کارت
     draw_trophy(card_surf, 212, 78, scale=1.65)
     h_txt = font_card_score.render(str(high_score), True, COLOR_WHITE)
     card_surf.blit(h_txt, h_txt.get_rect(center=(212, 142)))
@@ -905,7 +895,6 @@ def draw_menu_card_modal(
     card_surf.blit(mask_surf, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
     surface.blit(card_surf, (cx, cy))
 
-    # دکمه آبی پایین کارت (Continue در حالت استپ / Play Snake در پایان بازی)
     btn_y = cy + card_h + 14
     play_btn_rect = pygame.Rect(cx, btn_y, 224, 52)
     gear_btn_rect = pygame.Rect(cx + 236, btn_y, 64, 52)
@@ -926,7 +915,6 @@ def draw_menu_card_modal(
         border_radius=10,
     )
 
-    # چیدمان آیکون مثلث Play و متن دکمه در وسط دکمه آبی
     b_txt = font_btn.render(button_label, True, COLOR_WHITE)
     total_w = 24 + b_txt.get_width()
     start_x = play_btn_rect.centerx - total_w // 2
@@ -959,7 +947,6 @@ def main():
         )
 
     def reset_state():
-        # شروع افقی در سمت چپ و رو به سیب (دقیقاً مطابق عکس ارسالی شما)
         snake = [(4, 7), (3, 7), (2, 7)]
         direction = (1, 0)
         apple = (11, 7)
@@ -978,11 +965,12 @@ def main():
 
     score = 0
     high_score = load_high_score()
+    # ساخت اولیه فایل در پوشه data به محض اجرای بازی
+    save_high_score(high_score)
     muted = False
 
-    # وضعیت‌های بازی: "WAITING", "PLAYING", "PAUSED", "DYING", "GAMEOVER"
     game_state = "WAITING"
-    state_before_pause = "PLAYING"
+    state_before_pause = "WAITING"
     dying_timer = 0.0
     DYING_DURATION = 0.85
     death_progress = 1.0
@@ -1007,21 +995,18 @@ def main():
 
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 mx, my = event.pos
-                # ۱. کلیک روی دکمه صدا در گوشه بالا سمت راست (قطع و وصل صدا در هر لحظه)
                 if speaker_rect.collidepoint((mx, my)):
                     muted = not muted
                     set_global_mute(muted)
                     if not muted:
                         sound_click.play()
 
-                # ۲. کلیک روی دکمه Continue در حالت استپ (PAUSED)
                 elif game_state == "PAUSED":
                     if active_modal_btn_rect.collidepoint((mx, my)):
                         if not muted:
                             sound_click.play()
                         game_state = state_before_pause
 
-                # ۳. کلیک روی دکمه Play Snake در پایان بازی (GAMEOVER)
                 elif game_state == "GAMEOVER":
                     if active_modal_btn_rect.collidepoint((mx, my)) or True:
                         if not muted:
@@ -1043,12 +1028,10 @@ def main():
                         game_state = "WAITING"
 
             elif event.type == pygame.KEYDOWN:
-                # کلید M برای قطع و وصل سریع صدا
                 if event.key == pygame.K_m:
                     muted = not muted
                     set_global_mute(muted)
 
-                # کلید ESC برای استپ کردن بازی (Pause) و باز شدن کارت وسط صفحه با دکمه Continue
                 elif event.key == pygame.K_ESCAPE:
                     if game_state in ["PLAYING", "WAITING"]:
                         if not muted:
@@ -1060,7 +1043,6 @@ def main():
                             sound_click.play()
                         game_state = state_before_pause
 
-                # ادامه دادن بازی از حالت استپ با زدن Space یا Enter
                 elif game_state == "PAUSED" and event.key in [
                     pygame.K_SPACE,
                     pygame.K_RETURN,
@@ -1069,7 +1051,6 @@ def main():
                         sound_click.play()
                     game_state = state_before_pause
 
-                # شروع مجدد پس از باخت با Space یا Enter
                 elif game_state == "GAMEOVER" and event.key in [
                     pygame.K_SPACE,
                     pygame.K_RETURN,
@@ -1264,7 +1245,6 @@ def main():
 
         hx, hy = smooth_pts[0]
 
-        # در حالت استپ (PAUSED)، انیمیشن‌ها متوقف می‌مانند تا بازی دقیقاً از همان لحظه ادامه یابد
         if game_state != "PAUSED":
             if eating_apple is not None:
                 eating_apple["timer"] += dt_ms
@@ -1315,25 +1295,20 @@ def main():
         else:
             apple_center_px = cell_center(apple)
 
-        # ==========================================
         # رندر صفحه
-        # ==========================================
         screen.fill(COLOR_BORDER)
         pygame.draw.rect(
             screen, COLOR_TOP_BAR, (0, 0, SCREEN_WIDTH, TOP_BAR_HEIGHT)
         )
 
-        # سیب و امتیاز در نوار بالا
         draw_apple_at_center(screen, 34, 30, scale=0.95, has_shadow=False)
         score_surf = font_top.render(str(score), True, COLOR_WHITE)
         screen.blit(score_surf, (58, 12))
 
-        # جام و رکورد در نوار بالا (اگر رکورد بزرگ‌تر از صفر باشد یا همیشه نمایش داده شود)
         draw_trophy(screen, 130, 31, scale=0.85)
         high_surf = font_top.render(str(high_score), True, COLOR_WHITE)
         screen.blit(high_surf, (156, 12))
 
-        # رسم زمین شطرنجی پررنگ
         for row in range(GRID_HEIGHT):
             for col in range(GRID_WIDTH):
                 color = (
@@ -1352,7 +1327,6 @@ def main():
                     ),
                 )
 
-        # تپش بسیار ملایم سیب روی زمین (مثل نسخه اصلی گوگل)
         idle_pulse = 1.0 + math.sin(pygame.time.get_ticks() * 0.006) * 0.035
         draw_apple_at_center(
             screen,
@@ -1389,7 +1363,6 @@ def main():
                 max(1, int(part["r"] * part["life"])),
             )
 
-        # نمایش کارت وسط صفحه در حالت استپ (با دکمه Continue) یا در حالت باخت (با دکمه Play Snake)
         if game_state == "PAUSED":
             active_modal_btn_rect = draw_menu_card_modal(
                 screen,
@@ -1407,7 +1380,6 @@ def main():
                 mouse_pos=mouse_pos,
             )
 
-        # آیکون بلندگو را در بالاترین لایه می‌کشیم تا حتی وقتی بازی استپ است هم کاملاً روشن و قابل کلیک باشد
         draw_speaker_icon(
             screen,
             speaker_rect.centerx,
