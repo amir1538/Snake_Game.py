@@ -53,8 +53,9 @@ SNAKE_COLORS = {
     "orange": {"id": "orange", "label": "Orange", "head": (245, 132, 36),  "tail": (216, 100, 20),  "outline": (176, 76, 14),  "mouth": (110, 44, 10),  "pupil": (92, 36, 10)},
     "yellow": {"id": "yellow", "label": "Yellow", "head": (242, 192, 34),  "tail": (214, 154, 18),  "outline": (176, 120, 12), "mouth": (112, 72, 8),   "pupil": (94, 58, 8)},
     "green":  {"id": "green",  "label": "Green",  "head": (66, 178, 78),   "tail": (48, 148, 60),   "outline": (36, 118, 46),  "mouth": (20, 74, 28),   "pupil": (18, 66, 26)},
+    "black":  {"id": "black",  "label": "Black",  "head": (38, 42, 48),    "tail": (20, 22, 26),    "outline": (12, 14, 17),   "mouth": (10, 11, 14),   "pupil": (15, 17, 21)},
 }
-SNAKE_COLOR_ORDER = ["blue", "cyan", "purple", "pink", "red", "orange", "yellow", "green"]
+SNAKE_COLOR_ORDER = ["blue", "cyan", "purple", "pink", "red", "orange", "yellow", "green", "black"]
 
 THEMES = {
     "classic": {

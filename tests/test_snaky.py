@@ -400,5 +400,41 @@ class TestSnakyGame(unittest.TestCase):
                 self.assertEqual(wf.getnframes(), len(samples))
 
 
+
+    def test_27_deferred_score_flush_and_data_dir_path(self):
+        sm = SettingsManager(data_dir=self.data_dir)
+        # Deferred record does not error and updates in-memory high score immediately
+        sm.record_score(42, immediate=False)
+        self.assertEqual(sm.get_high_score(), 42)
+        self.assertTrue(sm._scores_dirty)
+        sm.flush()
+        self.assertFalse(sm._scores_dirty)
+        sm2 = SettingsManager(data_dir=self.data_dir)
+        self.assertEqual(sm2.get_high_score(), 42)
+        from snaky.paths import get_data_dir
+        dd = get_data_dir()
+        self.assertTrue(dd.endswith("Snaky Game"))
+
+
+
+    def test_28_black_snake_color_and_smooth_queued_turn(self):
+        sm, _, engine = self._make_env(snake_color="black")
+        self.assertEqual(sm.get()["snake_color"], "black")
+        self.assertIn("black", C.SNAKE_COLORS)
+        self.assertIn("black", C.SNAKE_COLOR_ORDER)
+
+        # Start moving right, queue DOWN mid-cell -> queues cleanly without teleporting, then turns smoothly on next grid step
+        engine.queue_direction(1, 0)
+        engine.update(70.0)
+        y_before = engine.snake[0]["y"]
+        self.assertTrue(engine.queue_direction(0, 1))
+        self.assertEqual(engine.snake[0]["y"], y_before)
+        self.assertEqual(len(engine.input_queue), 1)
+        for _ in range(3):
+            engine.update(35.0)
+        self.assertEqual(engine.direction, {"x": 0, "y": 1})
+        self.assertEqual(engine.snake[0]["y"], y_before + 1)
+
+
 if __name__ == "__main__":
     unittest.main()

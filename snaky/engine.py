@@ -165,9 +165,10 @@ class GameEngine:
         if (new_dir["x"] != last_dir["x"] or new_dir["y"] != last_dir["y"]) and len(self.input_queue) < 3:
             self.input_queue.append(new_dir)
             self.audio.play_turn(dx, dy)
-            if len(self.input_queue) == 1 and self.move_timer_ms >= self.move_interval_ms * 0.65:
-                self.smooth_head_dir[0] = self.smooth_head_dir[0] * 0.4 + dx * 0.6
-                self.smooth_head_dir[1] = self.smooth_head_dir[1] * 0.4 + dy * 0.6
+            # Subtle head anticipation for responsive feel while keeping full smooth Bezier turn animation
+            if len(self.input_queue) == 1 and self.move_timer_ms >= self.move_interval_ms * 0.45:
+                self.smooth_head_dir[0] = self.smooth_head_dir[0] * 0.45 + dx * 0.55
+                self.smooth_head_dir[1] = self.smooth_head_dir[1] * 0.45 + dy * 0.55
             return True
         return False
 
@@ -175,6 +176,7 @@ class GameEngine:
         if self.state in ("PLAYING", "WAITING"):
             self.state_before_pause = self.state
             self.state = "PAUSED"
+            self.settings_manager.flush()
             self.audio.play_click()
             return True
         if self.state == "PAUSED":
@@ -200,17 +202,19 @@ class GameEngine:
         self.dying_timer_ms = 0.0
         self.mouth_anim = 0.0
         self.eating_apple = None
-        self.high_score = self.settings_manager.record_score(self.score)
+        self.high_score = self.settings_manager.record_score(self.score, immediate=True)
+        self.settings_manager.flush()
         self.audio.play_die()
 
     def trigger_win(self) -> None:
         self.state = "WON"
-        self.high_score = self.settings_manager.record_score(self.score)
+        self.high_score = self.settings_manager.record_score(self.score, immediate=True)
+        self.settings_manager.flush()
         self.audio.play_win()
 
     def award_point(self, cell_x: int, cell_y: int, grow_main_snake: bool) -> None:
         self.score += 1
-        self.high_score = self.settings_manager.record_score(self.score)
+        self.high_score = self.settings_manager.record_score(self.score, immediate=False)
         self.audio.play_eat()
         if grow_main_snake:
             self.just_grew = True

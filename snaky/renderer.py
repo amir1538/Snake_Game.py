@@ -47,6 +47,8 @@ class BoardRenderer:
         self._hi_snake_buf: Optional[pygame.Surface] = None
         self._hi_shadow_buf: Optional[pygame.Surface] = None
         self._light_radial_unit: Optional[pygame.Surface] = None
+        self._light_mask_buf: Optional[pygame.Surface] = None
+        self._paused_rendered: bool = False
         self._particle_cache: Dict[int, pygame.Surface] = {}
 
     def _ensure_surfaces(self, engine, theme: Dict) -> None:
@@ -57,6 +59,8 @@ class BoardRenderer:
             self.board_surface = pygame.Surface((w, h)).convert()
             self._hi_snake_buf = pygame.Surface((w * 2, h * 2), pygame.SRCALPHA)
             self._hi_shadow_buf = pygame.Surface((w * 2, h * 2), pygame.SRCALPHA)
+            self._light_mask_buf = pygame.Surface((w, h), pygame.SRCALPHA)
+            self._paused_rendered = False
 
         if self.cache_key == key and self.board_cache is not None:
             return
@@ -78,6 +82,7 @@ class BoardRenderer:
 
     def invalidate_cache(self) -> None:
         self.cache_key = ""
+        self._paused_rendered = False
 
     def _get_particle_sprite(self, rad: int) -> pygame.Surface:
         r = max(2, int(rad))
@@ -376,7 +381,8 @@ class BoardRenderer:
                 seg_d = math.hypot(x2 - x1, y2 - y1)
                 if seg_d < 0.001:
                     continue
-                steps = max(1, int(round(seg_d / 1.35)))
+                step_sz = max(2.2, snake_radius * 0.22)
+                steps = max(1, int(round(seg_d / step_sz)))
                 for s in range(1, steps + 1):
                     t = s / steps
                     px_i = x1 + (x2 - x1) * t
@@ -469,7 +475,10 @@ class BoardRenderer:
 
         mouth_anim = engine.mouth_anim if is_main else 0.0
         denom_len = max(1.0, total_len)
-        sc = 2.0
+        sc = 1.5 if (bw * bh > 420000) else 2.0
+        buf_w, buf_h = self._hi_snake_buf.get_size()
+        hi_w = min(buf_w, max(4, int(round(bw * sc))))
+        hi_h = min(buf_h, max(4, int(round(bh * sc))))
 
         snout_off1 = snake_radius * 0.28
         snout_off2 = snake_radius * 0.56
@@ -488,7 +497,7 @@ class BoardRenderer:
         # PASS 1: UNIFIED FLAT 2x SHADOW (Zero overlap blotches, zero halo!)
         # ------------------------------------------------------------------
         sh_col = theme["shadow"]
-        hi_sh = self._hi_shadow_buf.subsurface((0, 0, bw * 2, bh * 2))
+        hi_sh = self._hi_shadow_buf.subsurface((0, 0, hi_w, hi_h))
         hi_sh.fill((*sh_col, 0))
         sh_solid = (*sh_col, 255)
 
@@ -526,7 +535,7 @@ class BoardRenderer:
         # PASS 3: UNIFIED SEAMLESS 2x SNAKE BODY + HEAD (Zero seams, zero halo!)
         # ------------------------------------------------------------------
         # Pre-fill with exact snake RGB at alpha=0 so smoothscale produces pure blue AA edges!
-        hi_sn = self._hi_snake_buf.subsurface((0, 0, bw * 2, bh * 2))
+        hi_sn = self._hi_snake_buf.subsurface((0, 0, hi_w, hi_h))
         hi_sn.fill((*head_col, 0))
 
         # Continuous opaque curved body from tail to head
@@ -560,7 +569,7 @@ class BoardRenderer:
                 ea = engine.eating_apple
                 local_ax = (ea["x"] - bx0) * sc
                 local_ay = (ea["y"] - by0) * sc
-                draw_fruit(hi_sn, ea["sprite"], local_ax, local_ay, cs * sc, ea["scale"], theme["shadow"], False, 255, False, engine.game_time_ms, False)
+                draw_fruit(hi_sn, ea["sprite"], local_ax, local_ay, cs, ea["scale"] * sc, theme["shadow"], False, 255, False, engine.game_time_ms, False)
 
             if mouth_anim > 0.25:
                 fang_len = (sr * 0.38) * mouth_anim
@@ -804,7 +813,8 @@ class BoardRenderer:
 
         ix, iy = int(round(hx - rad_px)), int(round(hy - rad_px))
         dark = (0, 0, 0, 240)
-        mask = pygame.Surface((w, h), pygame.SRCALPHA)
+        mask = self._light_mask_buf if (self._light_mask_buf is not None and self._light_mask_buf.get_size() == (w, h)) else pygame.Surface((w, h), pygame.SRCALPHA)
+        mask.fill((0, 0, 0, 0))
         if iy > 0:
             mask.fill(dark, (0, 0, w, iy))
         if iy + diam < h:
@@ -823,6 +833,9 @@ class BoardRenderer:
         self._ensure_surfaces(engine, theme)
 
         surf = self.board_surface
+        if engine.state == "PAUSED" and self._paused_rendered:
+            return surf
+        self._paused_rendered = (engine.state == "PAUSED")
         cs = engine.cell_size
 
         # 1. Static cached checkerboard

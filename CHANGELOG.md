@@ -2,6 +2,33 @@
 
 All notable changes to **Snaky Game** are documented in this file.
 
+## [1.2.5] - 2026-11-26
+
+### Changes
+- **Restored Smooth Curved Turning (`snaky/engine.py`):** Replaced instant mid-cell snapping with the original smooth grid-aligned Bezier turning animation, tuned with subtle head pre-turn anticipation (`0.45` threshold) for responsive yet silky-smooth turns while keeping the new **Black** snake color.
+
+## [1.2.4] - 2026-11-26
+
+### Changes
+- **Added Black Snake Color (`snaky/constants.py`):** Added a new `"black"` snake color option (matte charcoal-black body with crisp white eyes and dark pupils) to the Settings Carousel.
+- **Zero-Delay Instant Up/Down/Left/Right Turning (`snaky/engine.py`):** Pressing a perpendicular direction key (e.g., Up or Down while moving horizontally) now executes the turn immediately on `keydown` with 0ms delay while preserving the 3-turn buffer and 180-degree self-collision guard for rapid multi-key turns.
+
+## [1.2.3] - 2026-11-26
+
+### Fixes
+- **Fixed Window Shaking / Infinite Resize Loop (`snaky/app.py`):** Removed `pygame.display.set_mode()` from the `VIDEORESIZE` event handler (SDL2 already updates the display surface automatically) and fixed window positioning to NEVER modify window dimensions (uses SDL2 `Window.position` directly, with Win32 `SWP_NOSIZE` fallback only). Also cleared stale SDL2 `VIDEORESIZE`/`WINDOWRESIZED` events after toggling Fullscreen or changing Board Size so fullscreen stays rock-solid at `(0, 0)` with zero jitter or snapping back.
+- **Safety & Startup Polish (`snaky/renderer.py`, `snaky/audio.py`):** Added strict `subsurface` bounds clamping against scratch buffer dimensions and sped up synthesized non-WAV SFX generation 2x on startup while keeping `assets/sound/eat_apple.wav` completely untouched.
+
+## [1.2.2] - 2026-11-26
+
+### Performance & Fixes
+- **Eliminated Eat-Apple & Spawn-Apple Stutter (`snaky/icons.py`, `snaky/renderer.py`, `snaky/settings.py`):**
+  - Replaced per-frame 4x SSAA fruit sprite regeneration during `idle_pulse`, `spawn_scale`, and `eating_apple` animations with a single cached 4x SSAA base sprite per `(fruit, cell_size)` scaled cleanly via `smoothscale` (verified `0` SSAA rebuilds across 20 eat/spawn frames with zero visual downgrade).
+  - Deferred high-score JSON disk writes during active eating (`record_score(..., immediate=False)`) and flushed cleanly on death, win, pause, and exit so eating an apple never stalls on disk I/O.
+  - Optimized snake spine sampling (`max(2.2, snake_radius * 0.22)`), added adaptive SSAA (`1.5x` for very large fullscreen bounding boxes), reused Light Mode mask and UI dim-overlay buffers, cached paused board frames, and lazy-loaded rare mode SFX for faster startup.
+- **Fixed Fullscreen Shifting Downward on Windows (`snaky/app.py`):** Explicitly snapped the SDL2 window position to `(0, 0)` on borderless fullscreen (`Window.from_display_module().position` + Win32 `SetWindowPos` fallback) and centered cleanly on exit.
+- **Moved Persistent Save Data to `AppData\Local\Snaky Game` (`snaky/paths.py`):** Settings and high scores now save cleanly in `%LOCALAPPDATA%\Snaky Game` (with automatic one-time migration from any older local `./data/` folder).
+
 ## [1.2.1] - 2026-11-24
 
 ### Fixes

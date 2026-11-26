@@ -373,33 +373,42 @@ def draw_fruit(
     if scale <= 0.05:
         return
 
-    r = max(2.0, (cell_size * 0.43) * scale)
-    q_r = max(2.0, round(r * 2.0) / 2.0)
-    box_sz = max(10, int(math.ceil(q_r * 3.3)) + 4)
+    # Cache ONE crisp 4x-SSAA base sprite at scale=1.0 per (sprite, int(cell_size)).
+    # Animations (idle pulse, spawn pop-in, eating shrink) simply smoothscale the cached base
+    # sprite in ~0.05ms instead of rebuilding 4x-SSAA layers every frame!
+    base_cs = max(8, int(round(cell_size)))
+    base_r = max(2.0, base_cs * 0.43)
+    base_box = max(10, int(math.ceil(base_r * 3.3)) + 4)
 
-    # Flapping white wings behind winged fruit (color-matched white AA)
+    # Flapping white wings behind winged fruit (cached per quantized flap angle)
     if is_winged:
-        flap_step = int(round(math.sin(game_time_ms * 0.018) * 6.0)) * 4
-        w_key = ("wings", int(round(q_r)), flap_step)
+        flap_step = int(round(math.sin(game_time_ms * 0.018) * 4.0)) * 6
+        w_key = ("wings", base_cs, flap_step)
+        w_box = max(16, int(math.ceil(base_r * 4.4)) + 4)
 
         def _build_wings(dest: pygame.Surface) -> None:
             def _dw(hi, hcx, hcy, sc):
-                rr = q_r * sc
+                rr = base_r * sc
                 for side in (-1, 1):
                     draw_rotated_ellipse(hi, (250, 252, 255, 240), hcx + side * rr * 1.05, hcy - rr * 0.06, rr * 0.62, rr * 0.28, side * (-20.0 + flap_step))
             _render_aa_layer(dest, 3, (250, 252, 255), _dw)
 
-        w_box = max(16, int(math.ceil(q_r * 4.4)) + 4)
         w_spr = _get_cached_sprite(w_key, w_box, w_box, _build_wings)
-        surface.blit(w_spr, (int(round(cx - w_box / 2.0)), int(round(cy - w_box / 2.0))))
+        draw_w = max(4, int(round(w_box * scale)))
+        if abs(scale - 1.0) > 0.015 and draw_w != w_box:
+            w_spr = pygame.transform.smoothscale(w_spr, (draw_w, draw_w))
+        surface.blit(w_spr, (int(round(cx - w_spr.get_width() / 2.0)), int(round(cy - w_spr.get_height() / 2.0))))
 
-    # Soft halo-free drop shadow (color-matched 4x SSAA)
+    draw_box = max(4, int(round(base_box * scale)))
+    needs_scale = abs(scale - 1.0) > 0.012 and draw_box != base_box
+
+    # Soft halo-free drop shadow (cached once per cell_size & theme)
     if has_shadow:
-        sh_key = ("f_shadow_clean", box_sz, q_r, shadow_color)
+        sh_key = ("f_shadow_base", base_cs, shadow_color)
 
         def _build_sh(dest: pygame.Surface) -> None:
             def _dsh(hi, hcx, hcy, sc):
-                sr = q_r * sc
+                sr = base_r * sc
                 pygame.draw.ellipse(
                     hi,
                     (*shadow_color, 180),
@@ -407,22 +416,22 @@ def draw_fruit(
                 )
             _render_aa_layer(dest, 4, shadow_color, _dsh)
 
-        sh_spr = _get_cached_sprite(sh_key, box_sz, box_sz, _build_sh)
+        sh_spr = _get_cached_sprite(sh_key, base_box, base_box, _build_sh)
+        if needs_scale:
+            sh_spr = pygame.transform.smoothscale(sh_spr, (draw_box, draw_box))
         if alpha < 255:
-            sh_copy = sh_spr.copy()
-            sh_copy.set_alpha(alpha)
-            surface.blit(sh_copy, (int(round(cx - box_sz / 2.0)), int(round(cy - box_sz / 2.0))))
-        else:
-            surface.blit(sh_spr, (int(round(cx - box_sz / 2.0)), int(round(cy - box_sz / 2.0))))
+            sh_spr = sh_spr.copy()
+            sh_spr.set_alpha(alpha)
+        surface.blit(sh_spr, (int(round(cx - sh_spr.get_width() / 2.0)), int(round(cy - sh_spr.get_height() / 2.0))))
 
-    key = ("fruit_clean4x", sprite, q_r)
-    f_spr = _get_cached_sprite(key, box_sz, box_sz, lambda dest: _build_fruit_sprite_4x(dest, sprite, q_r))
+    key = ("fruit_base4x", sprite, base_cs)
+    f_spr = _get_cached_sprite(key, base_box, base_box, lambda dest: _build_fruit_sprite_4x(dest, sprite, base_r))
+    if needs_scale:
+        f_spr = pygame.transform.smoothscale(f_spr, (draw_box, draw_box))
     if alpha < 255:
-        f_copy = f_spr.copy()
-        f_copy.set_alpha(alpha)
-        surface.blit(f_copy, (int(round(cx - box_sz / 2.0)), int(round(cy - box_sz / 2.0))))
-    else:
-        surface.blit(f_spr, (int(round(cx - box_sz / 2.0)), int(round(cy - box_sz / 2.0))))
+        f_spr = f_spr.copy()
+        f_spr.set_alpha(alpha)
+    surface.blit(f_spr, (int(round(cx - f_spr.get_width() / 2.0)), int(round(cy - f_spr.get_height() / 2.0))))
 
 
 def _draw_trophy_hi(surface: pygame.Surface, cx: float, cy: float, s: float) -> None:

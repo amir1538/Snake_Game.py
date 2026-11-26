@@ -1,9 +1,9 @@
 """Snaky Game — Native HiDPI Desktop Application (pygame-ce).
 
 - Windowed Mode: Window tightly fits the exact game board (Small / Regular / Big)
-  and automatically resizes when Board Size is changed in Settings.
-- Fullscreen Mode (F11 or HUD button): Crash-free borderless fullscreen occupying
-  100% of the monitor without SDL2 display-mode hangs.
+  and automatically resizes once when Board Size is changed in Settings.
+- Fullscreen Mode (F11 or HUD button): Crash-free borderless fullscreen at exact (0, 0)
+  occupying 100% of the monitor without SDL2 hangs, downward offsets, or resize loops.
 """
 
 import ctypes
@@ -58,6 +58,23 @@ def _enable_hidpi_windows() -> None:
         pass
 
 
+def _detect_desktop_size() -> Tuple[int, int]:
+    """Returns true primary monitor resolution using pygame-ce desktop API with safe fallback."""
+    try:
+        sizes = pygame.display.get_desktop_sizes()
+        if sizes and sizes[0][0] > 0 and sizes[0][1] > 0:
+            return (int(sizes[0][0]), int(sizes[0][1]))
+    except Exception:
+        pass
+    try:
+        info = pygame.display.Info()
+        if info.current_w > 0 and info.current_h > 0:
+            return (int(info.current_w), int(info.current_h))
+    except Exception:
+        pass
+    return (1920, 1080)
+
+
 class SnakyApp:
     """Main desktop application controller."""
 
@@ -67,12 +84,7 @@ class SnakyApp:
         pygame.mixer.pre_init(44100, -16, 2, 512)
         pygame.init()
 
-        # Capture true desktop resolution BEFORE creating any display window
-        info = pygame.display.Info()
-        self.desktop_size: Tuple[int, int] = (
-            info.current_w if info.current_w > 0 else 1920,
-            info.current_h if info.current_h > 0 else 1080,
-        )
+        self.desktop_size: Tuple[int, int] = _detect_desktop_size()
 
         self.settings_manager = SettingsManager()
         self.audio = AudioManager(muted=self.settings_manager.get()["muted"])
@@ -83,8 +95,10 @@ class SnakyApp:
         self._last_board_dims = (self.engine.cols, self.engine.rows)
         self.windowed_size = self._compute_tight_window_size()
 
+        # Center the initial window cleanly via SDL2 env before the first set_mode
+        os.environ.pop("SDL_VIDEO_WINDOW_POS", None)
         os.environ["SDL_VIDEO_CENTERED"] = "1"
-        self.screen = self._create_display(self.windowed_size, fullscreen=False)
+        self.screen = pygame.display.set_mode(self.windowed_size, pygame.RESIZABLE)
         pygame.display.set_caption(C.PRODUCT_NAME)
 
         icon_path = get_asset_path("icon.png")
@@ -110,7 +124,6 @@ class SnakyApp:
         pad2 = UIController.BOARD_PAD * 2
         extra_h = UIController.TOP_BAR_H + pad2
 
-        # Fit cell size cleanly within screen bounds
         max_cell_w = (max_w - pad2) // max(1, self.engine.cols)
         max_cell_h = (max_h - extra_h) // max(1, self.engine.rows)
         cell = max(18, min(base_cell, max_cell_w, max_cell_h))
@@ -118,6 +131,55 @@ class SnakyApp:
         win_w = max(360, self.engine.cols * cell + pad2)
         win_h = max(480, self.engine.rows * cell + extra_h)
         return (win_w, win_h)
+
+    @staticmethod
+    def _clear_stale_resize_events() -> None:
+        """Flushes synthetic SDL2 resize events queued during a programmatic mode/size switch."""
+        ev_types = [pygame.VIDEORESIZE]
+        for name in ("WINDOWRESIZED", "WINDOWSIZECHANGED"):
+            ev_id = getattr(pygame, name, None)
+            if ev_id is not None:
+                ev_types.append(ev_id)
+        try:
+            pygame.event.clear(ev_types)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _move_window_only(x: int, y: int) -> None:
+        """Moves the existing window to (x, y) WITHOUT ever altering its width/height (SWP_NOSIZE)."""
+        try:
+            from pygame._sdl2.video import Window
+
+            win = Window.from_display_module()
+            win.position = (int(x), int(y))
+            return
+        except Exception:
+            pass
+
+        if sys.platform == "win32":
+            try:
+                hwnd = pygame.display.get_wm_info().get("window")
+                if hwnd:
+                    # SWP_NOSIZE (0x0001) | SWP_NOZORDER (0x0004) | SWP_NOACTIVATE (0x0010) = 0x0015
+                    ctypes.windll.user32.SetWindowPos(hwnd, 0, int(x), int(y), 0, 0, 0x0015)
+            except Exception:
+                pass
+
+    def _apply_windowed_mode(self, size: Tuple[int, int]) -> None:
+        """Applies windowed RESIZABLE display mode and centers window without altering size."""
+        self.screen = pygame.display.set_mode(size, pygame.RESIZABLE)
+        cx = max(0, (self.desktop_size[0] - size[0]) // 2)
+        cy = max(32, (self.desktop_size[1] - size[1]) // 2)
+        self._move_window_only(cx, cy)
+        self._clear_stale_resize_events()
+
+    def _apply_fullscreen_mode(self) -> None:
+        """Applies crash-free borderless fullscreen snapped cleanly to top-left (0, 0)."""
+        dw, dh = self.desktop_size
+        self.screen = pygame.display.set_mode((dw, dh), pygame.NOFRAME)
+        self._move_window_only(0, 0)
+        self._clear_stale_resize_events()
 
     def _sync_window_to_board_size(self) -> None:
         """If Board Size changed while in windowed mode, resize the window tightly to match."""
@@ -127,27 +189,17 @@ class SnakyApp:
         self._last_board_dims = dims
         self.windowed_size = self._compute_tight_window_size()
         if not self.is_fullscreen:
-            self.screen = self._create_display(self.windowed_size, fullscreen=False)
+            self._apply_windowed_mode(self.windowed_size)
         self.renderer.invalidate_cache()
         self.ui.update_layout(*self.screen.get_size())
 
-    def _create_display(self, size: Tuple[int, int], fullscreen: bool) -> pygame.Surface:
-        """Creates a stable SDL2 display surface without FULLSCREEN+DOUBLEBUF+vsync hangs."""
-        if fullscreen:
-            # Borderless desktop fullscreen: 100% screen coverage, instant switch, zero Windows hangs
-            os.environ.pop("SDL_VIDEO_CENTERED", None)
-            os.environ["SDL_VIDEO_WINDOW_POS"] = "0,0"
-            return pygame.display.set_mode(self.desktop_size, pygame.NOFRAME)
-
-        os.environ.pop("SDL_VIDEO_WINDOW_POS", None)
-        os.environ["SDL_VIDEO_CENTERED"] = "1"
-        return pygame.display.set_mode(size, pygame.RESIZABLE)
-
     def toggle_fullscreen(self) -> None:
         self.is_fullscreen = not self.is_fullscreen
-        if not self.is_fullscreen:
+        if self.is_fullscreen:
+            self._apply_fullscreen_mode()
+        else:
             self.windowed_size = self._compute_tight_window_size()
-        self.screen = self._create_display(self.windowed_size, fullscreen=self.is_fullscreen)
+            self._apply_windowed_mode(self.windowed_size)
         self.ui.is_fullscreen = self.is_fullscreen
         self.renderer.invalidate_cache()
         self.ui.update_layout(*self.screen.get_size())
@@ -205,6 +257,18 @@ class SnakyApp:
             _, _, tag = KEY_TO_DIR[key]
             self.engine.held_dirs.discard(tag)
 
+    def _handle_video_resize(self, w: int, h: int) -> None:
+        """Handles user-driven window resize safely WITHOUT calling set_mode() (prevents SDL2 loops)."""
+        if self.is_fullscreen:
+            return
+        surf = pygame.display.get_surface()
+        if surf is not None:
+            self.screen = surf
+            self.windowed_size = surf.get_size()
+        else:
+            self.windowed_size = (max(360, int(w)), max(460, int(h)))
+        self.ui.update_layout(*self.screen.get_size())
+
     def run(self) -> None:
         while self.running:
             dt_ms = float(self.clock.tick(60))
@@ -212,12 +276,11 @@ class SnakyApp:
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    self.settings_manager.record_score(self.engine.score)
+                    self.settings_manager.record_score(self.engine.score, immediate=True)
+                    self.settings_manager.flush()
                     self.running = False
-                elif event.type == pygame.VIDEORESIZE and not self.is_fullscreen:
-                    self.windowed_size = (max(360, event.w), max(460, event.h))
-                    self.screen = self._create_display(self.windowed_size, fullscreen=False)
-                    self.ui.update_layout(*self.screen.get_size())
+                elif event.type == pygame.VIDEORESIZE:
+                    self._handle_video_resize(event.w, event.h)
                 elif event.type == pygame.KEYDOWN:
                     self._handle_key_down(event.key)
                 elif event.type == pygame.KEYUP:

@@ -57,7 +57,7 @@ class NullAudioManager:
         pass
 
 
-def _samples_to_wav_bytes(samples, sample_rate: int = 44100) -> io.BytesIO:
+def _samples_to_wav_bytes(samples, sample_rate: int = 22050) -> io.BytesIO:
     buf = io.BytesIO()
     with wave.open(buf, "wb") as wf:
         wf.setnchannels(1)
@@ -69,7 +69,7 @@ def _samples_to_wav_bytes(samples, sample_rate: int = 44100) -> io.BytesIO:
     return buf
 
 
-def _make_move_pop_samples(f_start: float, f_end: float, dur: float, sr: int = 44100):
+def _make_move_pop_samples(f_start: float, f_end: float, dur: float, sr: int = 22050):
     n = int(sr * dur)
     samples = []
     phase = 0.0
@@ -89,7 +89,7 @@ def _make_move_pop_samples(f_start: float, f_end: float, dur: float, sr: int = 4
     return samples
 
 
-def _make_die_samples(sr: int = 44100):
+def _make_die_samples(sr: int = 22050):
     dur = 0.52
     n = int(sr * dur)
     samples = []
@@ -120,7 +120,7 @@ def _make_die_samples(sr: int = 44100):
     return samples
 
 
-def _make_click_samples(sr: int = 44100):
+def _make_click_samples(sr: int = 22050):
     dur = 0.055
     n = int(sr * dur)
     samples = []
@@ -136,7 +136,7 @@ def _make_click_samples(sr: int = 44100):
     return samples
 
 
-def _make_sweep_samples(f1: float, f2: float, dur: float, wave_type: str = "sine", vol: float = 0.28, sr: int = 44100):
+def _make_sweep_samples(f1: float, f2: float, dur: float, wave_type: str = "sine", vol: float = 0.28, sr: int = 22050):
     n = int(sr * dur)
     samples = []
     phase = 0.0
@@ -159,7 +159,7 @@ def _make_sweep_samples(f1: float, f2: float, dur: float, wave_type: str = "sine
     return samples
 
 
-def _make_arpeggio_samples(freqs, step_s: float, note_dur: float, vol: float = 0.28, sr: int = 44100):
+def _make_arpeggio_samples(freqs, step_s: float, note_dur: float, vol: float = 0.28, sr: int = 22050):
     total_dur = (len(freqs) - 1) * step_s + note_dur
     n = int(sr * total_dur)
     buf = [0.0] * n
@@ -237,15 +237,17 @@ class AudioManager:
         self.sounds["turn_left"] = self._sound_from_samples(_make_move_pop_samples(198.0, 152.0, 0.064), 0.92)
         self.sounds["turn_down"] = self._sound_from_samples(_make_move_pop_samples(168.0, 125.0, 0.068), 0.92)
 
-        # 3. Death, Click & Mode SFX
+        # 3. Core SFX loaded upfront; rare mode SFX synthesized lazily on first use for instant startup
         self.sounds["die"] = self._sound_from_samples(_make_die_samples(), 0.95)
         self.sounds["click"] = self._sound_from_samples(_make_click_samples(), 0.75)
-        self.sounds["portal"] = self._sound_from_samples(_make_sweep_samples(280.0, 920.0, 0.16, "sine", 0.35), 0.9)
-        self.sounds["key_unlock"] = self._sound_from_samples(_make_arpeggio_samples([523.25, 659.25, 783.99], 0.045, 0.13, 0.32), 0.9)
-        self.sounds["crate_push"] = self._sound_from_samples(_make_sweep_samples(110.0, 75.0, 0.08, "square", 0.22), 0.85)
-        self.sounds["poison"] = self._sound_from_samples(_make_sweep_samples(340.0, 150.0, 0.24, "saw", 0.30), 0.9)
-        self.sounds["dimension"] = self._sound_from_samples(_make_sweep_samples(620.0, 310.0, 0.14, "sine", 0.30), 0.9)
-        self.sounds["win"] = self._sound_from_samples(_make_arpeggio_samples([523.25, 659.25, 783.99, 1046.5], 0.08, 0.23, 0.34), 0.95)
+        self._lazy_factories = {
+            "portal": lambda: self._sound_from_samples(_make_sweep_samples(280.0, 920.0, 0.16, "sine", 0.35), 0.9),
+            "key_unlock": lambda: self._sound_from_samples(_make_arpeggio_samples([523.25, 659.25, 783.99], 0.045, 0.13, 0.32), 0.9),
+            "crate_push": lambda: self._sound_from_samples(_make_sweep_samples(110.0, 75.0, 0.08, "square", 0.22), 0.85),
+            "poison": lambda: self._sound_from_samples(_make_sweep_samples(340.0, 150.0, 0.24, "saw", 0.30), 0.9),
+            "dimension": lambda: self._sound_from_samples(_make_sweep_samples(620.0, 310.0, 0.14, "sine", 0.30), 0.9),
+            "win": lambda: self._sound_from_samples(_make_arpeggio_samples([523.25, 659.25, 783.99, 1046.5], 0.08, 0.23, 0.34), 0.95),
+        }
 
     def set_muted(self, muted: bool) -> None:
         self.muted = bool(muted)
@@ -259,6 +261,12 @@ class AudioManager:
         if self.muted or not self.ready:
             return
         snd = self.sounds.get(key)
+        if snd is None and hasattr(self, "_lazy_factories") and key in self._lazy_factories:
+            try:
+                snd = self._lazy_factories.pop(key)()
+                self.sounds[key] = snd
+            except Exception:
+                snd = None
         if snd is not None:
             try:
                 snd.play()

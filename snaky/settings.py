@@ -35,6 +35,7 @@ class SettingsManager:
         # Legacy compatibility with older single-value highscore.json if present
         self.legacy_score_path = os.path.join(self.data_dir, "highscore.json")
 
+        self._scores_dirty = False
         self.settings = self._load_settings()
         self.high_scores = self._load_high_scores()
 
@@ -194,7 +195,7 @@ class SettingsManager:
     def get_global_high_score(self) -> int:
         return int(self.high_scores.get("global", 0))
 
-    def record_score(self, score: int) -> int:
+    def record_score(self, score: int, immediate: bool = True) -> int:
         key = self.get_score_key()
         by_cfg = self.high_scores.setdefault("by_config", {})
         updated = False
@@ -205,5 +206,15 @@ class SettingsManager:
             self.high_scores["global"] = int(score)
             updated = True
         if updated:
-            self._save_high_scores()
+            if immediate:
+                self._save_high_scores()
+                self._scores_dirty = False
+            else:
+                self._scores_dirty = True
         return self.get_high_score()
+
+    def flush(self) -> None:
+        """Persist any deferred high-score updates cleanly to disk."""
+        if self._scores_dirty:
+            self._save_high_scores()
+            self._scores_dirty = False

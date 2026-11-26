@@ -50,6 +50,7 @@ class UIController:
         # Cached 2x-supersampled Main Menu Card surface
         self._menu_card_cache: Optional[pygame.Surface] = None
         self._menu_card_key: Tuple = ()
+        self._dim_overlay_cache: Dict[Tuple[int, int, int], pygame.Surface] = {}
 
         # Crisp native fonts (also 2x fonts for supersampled card rendering)
         self.font_hud = pygame.font.SysFont("segoeui,arial,sans", 24, bold=True)
@@ -351,13 +352,22 @@ class UIController:
         I.draw_speaker_icon(screen, self.rects["btn_mute"].centerx, self.rects["btn_mute"].centery, s["muted"])
         I.draw_gear_icon(screen, self.rects["btn_settings"].centerx, self.rects["btn_settings"].centery, radius=9, hole_color=theme["top_bar"])
 
+    def _get_dim_overlay(self, w: int, h: int, alpha: int) -> pygame.Surface:
+        key = (w, h, alpha)
+        ov = self._dim_overlay_cache.get(key)
+        if ov is None:
+            if len(self._dim_overlay_cache) > 6:
+                self._dim_overlay_cache.clear()
+            ov = pygame.Surface((max(1, w), max(1, h)), pygame.SRCALPHA)
+            ov.fill((0, 0, 0, alpha))
+            self._dim_overlay_cache[key] = ov
+        return ov
+
     def _draw_pause_ui(self, screen: pygame.Surface, theme: Dict, mouse_pos: Tuple[int, int]) -> None:
         win_w, _ = screen.get_size()
         bar_rect = self.rects["pause_bar"]
 
-        ov = pygame.Surface((win_w, bar_rect.top - self.TOP_BAR_H), pygame.SRCALPHA)
-        ov.fill((0, 0, 0, 115))
-        screen.blit(ov, (0, self.TOP_BAR_H))
+        screen.blit(self._get_dim_overlay(win_w, bar_rect.top - self.TOP_BAR_H, 115), (0, self.TOP_BAR_H))
 
         p_txt = self.font_pause.render("PAUSED", True, C.UI_WHITE)
         pw, ph = p_txt.get_width() + 56, 54
@@ -440,9 +450,7 @@ class UIController:
         win_w, win_h = screen.get_size()
         s = self.settings_manager.get()
 
-        ov = pygame.Surface((win_w, win_h), pygame.SRCALPHA)
-        ov.fill((0, 0, 0, 178))
-        screen.blit(ov, (0, 0))
+        screen.blit(self._get_dim_overlay(win_w, win_h, 178), (0, 0))
 
         card_rect = self.rects["card"]
         cache_key = (self.engine.state, self.engine.score, self.engine.high_score, s["food_type"], s["snake_color"], s["theme"])
@@ -491,9 +499,7 @@ class UIController:
         s = self.settings_manager.get()
         rows_spec = self._get_rows_spec(s)
 
-        ov = pygame.Surface((win_w, win_h), pygame.SRCALPHA)
-        ov.fill((0, 0, 0, 178))
-        screen.blit(ov, (0, 0))
+        screen.blit(self._get_dim_overlay(win_w, win_h, 178), (0, 0))
 
         card_rect = self.rects["card"]
         cw, ch = card_rect.width, card_rect.height
